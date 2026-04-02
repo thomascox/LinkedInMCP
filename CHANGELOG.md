@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.1] - 2026-04-02
+
+### Changed
+
+- Replaced multi-step README setup guide with a true one-command installer
+- Added `install.sh` — clones repo, installs deps, builds, installs Chromium, and patches Claude Desktop config automatically
+- README now shows `curl ... | bash` as the single setup step with manual fallback instructions
+
 ## [0.6.0] - 2026-04-02
 
 ### Added

@@ -4,58 +4,70 @@ A Model Context Protocol (MCP) server that provides LinkedIn automation tools vi
 
 Includes built-in stealth measures to reduce automation detection and a global rate limiter (10-30s randomized delay between actions) for safe, human-paced operation.
 
-## Quick Start (One-Click Setup)
+## Quick Start
 
-### 1. Clone and build
+### Prerequisites
+
+- **Node.js** >= 18 — [nodejs.org](https://nodejs.org)
+- **Git**
+
+### Step 1 — Run the installer (one command)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/thomascox/LinkedInMCP/main/install.sh | bash
+```
+
+This single command:
+1. Clones the repo to `~/.linkedin-mcp-server/`
+2. Installs all dependencies and compiles TypeScript
+3. Installs the Playwright Chromium browser
+4. Writes the `linkedin` entry into your Claude Desktop config automatically
+
+### Step 2 — Restart Claude Desktop
+
+Quit and reopen Claude Desktop. The LinkedIn tools will appear.
+
+### Step 3 — Authenticate
+
+In Claude, say: _"Use manage\_auth\_session with action 'capture' to log in to LinkedIn."_
+
+A browser window opens. Log in normally. Once you reach the feed, the session is saved and the browser closes.
+
+That's it.
+
+---
+
+### Manual setup (if you prefer)
+
+If you'd rather clone to a custom location:
 
 ```bash
 git clone https://github.com/thomascox/LinkedInMCP.git
 cd LinkedInMCP
-npm install
+npm install              # also builds dist/ automatically
 npx playwright install chromium
 ```
 
-The `npm install` step automatically compiles TypeScript to `dist/` via the `prepare` script.
-
-### 2. Add to Claude Desktop
-
-Open your Claude Desktop config file:
-
-- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
-
-Add the `linkedin` entry under `mcpServers`:
+Then open `~/Library/Application Support/Claude/claude_desktop_config.json` and add:
 
 ```json
 {
   "mcpServers": {
     "linkedin": {
       "command": "node",
-      "args": ["/path/to/LinkedInMCP/dist/index.js"]
+      "args": ["/full/path/to/LinkedInMCP/dist/index.js"]
     }
   }
 }
 ```
 
-Replace `/path/to/LinkedInMCP` with the actual absolute path to this repository (e.g. `/Users/yourname/LinkedInMCP`).
-
-### 3. Restart Claude Desktop
-
-Quit and reopen Claude Desktop. The LinkedIn MCP server tools will appear automatically.
-
-### 4. Authenticate
-
-In Claude Desktop, ask Claude to run:
-
-> "Use manage_auth_session with action 'capture' to log into LinkedIn."
-
-A Chromium window opens. Log in manually. Once you reach the feed, the session is saved and the browser closes.
+Restart Claude Desktop.
 
 ## Prerequisites
 
 - **Node.js** >= 18
-- **npm**
-- Chromium (installed automatically by `npx playwright install chromium`)
+- **Git**
+- Chromium (installed automatically by the installer or `npx playwright install chromium`)
 
 ## Configuration
 
