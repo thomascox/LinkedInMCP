@@ -1,0 +1,19 @@
+{
+  "name": "linkedin-mcp-server",
+  "version": "0.1.0",
+  "description": "LinkedIn MCP server using Playwright for browser automation",
+  "private": true,
+  "scripts": {
+    "start": "ts-node src/index.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "playwright": "^1.52.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
+}
