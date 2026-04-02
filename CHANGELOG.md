@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-04-02
+
+### Added
+
+- **Stealth layer** (`src/stealth.ts`) — applies anti-detection patches to every browser context:
+  - Removes `navigator.webdriver`, injects `window.chrome` runtime stubs
+  - Populates `navigator.plugins` with realistic entries
+  - Overrides WebGL vendor/renderer to mask headless GPU signatures
+  - Patches `Permissions.prototype.query`, fixes `outerWidth`/`outerHeight`
+  - Chromium launched with `--disable-blink-features=AutomationControlled`
+  - Sets realistic locale (`en-US`) and timezone (`America/New_York`)
+- **Global rate limiter** (`src/rate-limiter.ts`) — enforces 10-30s randomized delay between all LinkedIn actions across all tools
+- One-click setup guide in README with Claude Desktop `config.json` example pointing to compiled `dist/index.js`
+- `prepare` script in package.json for automatic build on `npm install`
+- `bin` field and `start:built` script for running from compiled output
+
+### Changed
+
+- `browser.ts` now integrates stealth scripts and rate limiting into `launchWithSession()`
+- `auth.ts` capture and verify flows now apply stealth patches and rate limiting
+- `easy-apply.ts` `fillApplicationStep` now rate-limited between steps
+- README fully rewritten with Quick Start, Stealth & Safety, and all tool documentation
+- Package version bumped to 0.5.0
+
 ## [0.5.0] - 2026-04-02
 
 ### Added

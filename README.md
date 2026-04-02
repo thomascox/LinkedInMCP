@@ -2,25 +2,60 @@
 
 A Model Context Protocol (MCP) server that provides LinkedIn automation tools via Playwright browser control. Designed to work with MCP clients like Claude Desktop over the Stdio transport.
 
+Includes built-in stealth measures to reduce automation detection and a global rate limiter (10-30s randomized delay between actions) for safe, human-paced operation.
+
+## Quick Start (One-Click Setup)
+
+### 1. Clone and build
+
+```bash
+git clone https://github.com/thomascox/LinkedInMCP.git
+cd LinkedInMCP
+npm install
+npx playwright install chromium
+```
+
+The `npm install` step automatically compiles TypeScript to `dist/` via the `prepare` script.
+
+### 2. Add to Claude Desktop
+
+Open your Claude Desktop config file:
+
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+Add the `linkedin` entry under `mcpServers`:
+
+```json
+{
+  "mcpServers": {
+    "linkedin": {
+      "command": "node",
+      "args": ["/path/to/LinkedInMCP/dist/index.js"]
+    }
+  }
+}
+```
+
+Replace `/path/to/LinkedInMCP` with the actual absolute path to this repository (e.g. `/Users/yourname/LinkedInMCP`).
+
+### 3. Restart Claude Desktop
+
+Quit and reopen Claude Desktop. The LinkedIn MCP server tools will appear automatically.
+
+### 4. Authenticate
+
+In Claude Desktop, ask Claude to run:
+
+> "Use manage_auth_session with action 'capture' to log into LinkedIn."
+
+A Chromium window opens. Log in manually. Once you reach the feed, the session is saved and the browser closes.
+
 ## Prerequisites
 
 - **Node.js** >= 18
 - **npm**
-- A Chromium-based browser (Playwright will use its bundled Chromium by default)
-
-## Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/thomascox/LinkedInMCP.git
-cd LinkedInMCP
-
-# Install dependencies
-npm install
-
-# Install Playwright browsers (Chromium)
-npx playwright install chromium
-```
+- Chromium (installed automatically by `npx playwright install chromium`)
 
 ## Configuration
 
@@ -30,36 +65,28 @@ The server stores browser data and session state in `~/.linkedin-mcp/`:
 |------|---------|
 | `~/.linkedin-mcp/browser-data/` | Persistent Chromium user profile |
 | `~/.linkedin-mcp/storageState.json` | Saved cookies and session data |
+| `~/.linkedin-mcp/screenshots/` | Easy Apply step screenshots |
 
 No manual configuration is required. These directories are created automatically on first use.
 
-## Usage
+## Stealth and Safety
 
-### Starting the server
+### Anti-detection
 
-```bash
-npm start
-```
+Every browser context launched by the server has stealth patches applied automatically:
 
-This launches the MCP server on stdio. It is intended to be started by an MCP client, not run interactively.
+- Removes `navigator.webdriver` flag
+- Injects `window.chrome` runtime stubs
+- Populates `navigator.plugins` with realistic entries
+- Overrides WebGL vendor/renderer to mask headless GPU signatures
+- Sets `window.outerWidth`/`outerHeight` to match inner dimensions
+- Patches `Permissions.prototype.query` for notifications
+- Launches Chromium with `--disable-blink-features=AutomationControlled`
+- Sets realistic user agent, locale (`en-US`), and timezone
 
-### Claude Desktop integration
+### Rate Limiter
 
-Add the following to your Claude Desktop MCP configuration (`claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "linkedin": {
-      "command": "npx",
-      "args": ["ts-node", "src/index.ts"],
-      "cwd": "/path/to/LinkedInMCP"
-    }
-  }
-}
-```
-
-Replace `/path/to/LinkedInMCP` with the actual path to this repository.
+A global rate limiter enforces a randomized delay of **10-30 seconds** between every LinkedIn action. This applies to all tool calls that interact with LinkedIn (search, messaging, profile, applications). The delay is measured from the completion of the previous action, so natural pauses between LLM reasoning steps count toward the wait.
 
 ## Tools
 
@@ -69,34 +96,20 @@ Health check to confirm the server is running.
 
 **Parameters:** None
 
-**Example response:**
-```
-LinkedIn MCP server is alive.
-```
-
 ### `manage_auth_session`
 
 Manage LinkedIn authentication sessions.
-
-**Parameters:**
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `action` | `"capture"` \| `"verify"` | Yes | The action to perform |
 
-**Action: `capture`**
-
-Opens a headed Chromium browser and navigates to LinkedIn's login page. You log in manually in the browser window. Once the URL reaches `/feed`, the session cookies are saved to `storageState.json` and the browser closes.
-
-**Action: `verify`**
-
-Launches a headless browser with the saved session state, navigates to the LinkedIn feed, and checks for the presence of the user avatar to confirm the session is still active.
+- **`capture`** — Opens a headed browser, navigates to login, waits for you to log in, saves session cookies.
+- **`verify`** — Headless check that the saved session is still valid (loads feed, checks for avatar).
 
 ### `search_linkedin`
 
 Search LinkedIn for people or jobs. Returns structured JSON results.
-
-**Parameters:**
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
@@ -112,28 +125,14 @@ Search LinkedIn for people or jobs. Returns structured JSON results.
 | `remote` | `"onsite"` \| `"remote"` \| `"hybrid"` | Jobs | Work arrangement filter |
 | `experienceLevel` | `"internship"` \| `"entry"` \| `"associate"` \| `"mid-senior"` \| `"director"` \| `"executive"` | Jobs | Experience level filter |
 
-**People results return:**
+**People results:**
 ```json
-[
-  {
-    "name": "Jane Doe",
-    "headline": "Software Engineer at Acme",
-    "profileUrl": "https://www.linkedin.com/in/janedoe"
-  }
-]
+[{ "name": "Jane Doe", "headline": "Engineer at Acme", "profileUrl": "https://www.linkedin.com/in/janedoe" }]
 ```
 
-**Job results return:**
+**Job results:**
 ```json
-[
-  {
-    "jobId": "3812345678",
-    "title": "Senior Engineer",
-    "company": "Acme Corp",
-    "location": "San Francisco, CA",
-    "easyApply": true
-  }
-]
+[{ "jobId": "3812345678", "title": "Senior Engineer", "company": "Acme Corp", "location": "SF, CA", "easyApply": true }]
 ```
 
 ### `get_messages`
@@ -142,113 +141,50 @@ Retrieve the last 10 conversation threads from the LinkedIn messaging inbox.
 
 **Parameters:** None
 
-**Example response:**
-```json
-[
-  {
-    "senderName": "Jane Doe",
-    "lastMessageSnippet": "Thanks for connecting! I wanted to reach out about..."
-  }
-]
-```
-
 ### `send_linkedin_message`
 
 Send a direct message to a LinkedIn user. Only works for 1st-degree connections.
-
-**Parameters:**
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `profile_url` | `string` (URL) | Yes | Full LinkedIn profile URL |
 | `message_body` | `string` | Yes | The message text to send |
 
-The tool navigates to the profile, checks for the Message button (1st-degree connection check), opens the messaging modal, types the message with randomized per-character delay (50-150ms) to mimic human input, and clicks Send.
-
-If the user is not a 1st-degree connection, the tool returns an informational message instead of failing.
+Checks for the Message button (1st-degree gate), types with human-like delay (50-150ms per character), and clicks Send.
 
 ### `manage_profile`
 
 Read or update your own LinkedIn profile sections.
 
-**Parameters:**
-
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `action` | `"get_profile"` \| `"update_section"` | Yes | Action to perform |
 | `section` | `"headline"` \| `"about"` | For `update_section` | Section to edit |
-| `text` | `string` | For `update_section` | New content for the section |
+| `text` | `string` | For `update_section` | New content |
 
-**Action: `get_profile`**
-
-Scrapes your own profile and returns structured data:
-
-```json
-{
-  "headline": "Software Engineer at Acme",
-  "about": "Passionate about building great products...",
-  "experience": [
-    {
-      "title": "Software Engineer",
-      "company": "Acme Corp",
-      "duration": "Jan 2022 - Present",
-      "description": "Leading frontend development..."
-    }
-  ]
-}
-```
-
-**Action: `update_section`**
-
-Opens the edit modal for the specified section, clears existing text, types the new content with human-like delay (50-150ms per character), clicks Save, and waits for the confirmation toast.
+- **`get_profile`** — Returns headline, about, and experience as JSON.
+- **`update_section`** — Opens edit modal, clears text, types new content, saves, waits for toast.
 
 ### `start_application`
 
-Start an Easy Apply application for a LinkedIn job. Opens the Easy Apply modal and returns the initial form state for the LLM to process.
-
-**Parameters:**
+Start an Easy Apply application for a LinkedIn job.
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `job_id` | `string` | Yes | LinkedIn Job ID (from `search_linkedin` results) |
+| `job_id` | `string` | Yes | LinkedIn Job ID |
 
-**Returns:** A JSON object containing the current step state:
-
-```json
-{
-  "stepNumber": 1,
-  "isReviewStep": false,
-  "isComplete": false,
-  "fields": [
-    {
-      "type": "text",
-      "label": "Phone number",
-      "name": "phone",
-      "value": "",
-      "required": true
-    }
-  ],
-  "formHtml": "<div>...</div>",
-  "screenshotPath": "/path/to/screenshot.png"
-}
-```
+Returns the initial form state (fields, HTML, screenshot path) for the LLM. Keeps the browser alive for `fill_application_step`.
 
 ### `fill_application_step`
 
-Fill the current Easy Apply form step and advance. The LLM manages the loop by reading fields from `start_application` or prior step responses and providing answers.
-
-**Parameters:**
+Fill the current Easy Apply form step and advance.
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `answers` | `array` | Yes | Array of `{ label, value }` pairs for form fields |
-| `action` | `"next"` \| `"review"` \| `"submit"` | Yes | Advance to next step, review, or submit |
+| `answers` | `array` | Yes | Array of `{ label, value }` pairs |
+| `action` | `"next"` \| `"review"` \| `"submit"` | Yes | Action to take |
 
-Each answer matches a field by its label text. Supports text inputs, textareas, selects (by option label), radio buttons (by option text), checkboxes (`"true"`/`"false"`), and contenteditable divs.
-
-At the review step, the tool automatically unchecks "Follow company" if checked. On `submit`, it clicks "Submit application" and checks for the success confirmation.
-
-Returns validation errors if the form cannot advance, allowing the LLM to correct and retry.
+Auto-unchecks "Follow company" at review. Returns validation errors for LLM retry.
 
 ### `cancel_application`
 
@@ -264,13 +200,16 @@ LinkedInMCP/
 │   ├── index.ts          # Server entry point, tool registration
 │   ├── config.ts         # Central configuration (paths, server metadata)
 │   ├── logger.ts         # Stderr logging utility (prevents JSON-RPC corruption)
-│   ├── browser.ts        # Shared browser launch + session helpers
+│   ├── browser.ts        # Shared browser launch + session + stealth + rate limit
+│   ├── stealth.ts        # Anti-detection init scripts (navigator, WebGL, chrome, etc.)
+│   ├── rate-limiter.ts   # Global 10-30s randomized delay between actions
 │   └── tools/
 │       ├── auth.ts       # manage_auth_session implementation
 │       ├── search.ts     # search_linkedin implementation
 │       ├── messaging.ts  # get_messages + send_linkedin_message
 │       ├── profile.ts    # manage_profile (get_profile + update_section)
 │       └── easy-apply.ts # start_application + fill_application_step + cancel
+├── dist/                 # Compiled JavaScript (generated by npm run build)
 ├── package.json
 └── tsconfig.json
 ```
@@ -278,6 +217,12 @@ LinkedInMCP/
 ## Development
 
 ```bash
+# Run from source (TypeScript)
+npm start
+
+# Run from compiled output
+npm run start:built
+
 # Type-check without emitting
 npx tsc --noEmit
 

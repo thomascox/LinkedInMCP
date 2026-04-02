@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { config } from "../config";
 import { logger } from "../logger";
-import { launchWithSession, ensureAuthenticated } from "../browser";
+import { launchWithSession, ensureAuthenticated, rateLimit } from "../browser";
 
 // -- Types -----------------------------------------------------------------
 
@@ -372,6 +372,8 @@ async function fillApplicationStep(
   answers: FieldAnswer[],
   action: "next" | "review" | "submit"
 ): Promise<string> {
+  await rateLimit();
+
   const page = ensureActiveSession();
   const modal = getModalLocator(page);
 

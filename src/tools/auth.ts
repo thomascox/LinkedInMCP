@@ -2,6 +2,8 @@ import { chromium } from "playwright";
 import fs from "fs";
 import { config } from "../config";
 import { logger } from "../logger";
+import { applyStealthScripts } from "../stealth";
+import { rateLimit } from "../rate-limiter";
 
 const LOGIN_URL = "https://www.linkedin.com/login";
 const FEED_URL = "https://www.linkedin.com/feed";
@@ -17,8 +19,15 @@ async function captureSession(): Promise<string> {
       headless: false,
       channel: "chromium",
       viewport: { width: 1280, height: 800 },
+      args: [
+        "--disable-blink-features=AutomationControlled",
+        "--no-first-run",
+        "--no-default-browser-check",
+      ],
     }
   );
+
+  await applyStealthScripts(context);
 
   const page = context.pages()[0] || (await context.newPage());
   await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded" });
@@ -65,14 +74,27 @@ async function verifySession(): Promise<string> {
 
   logger.info("Launching headless browser to verify session...");
 
+  await rateLimit();
+
   const browser = await chromium.launch({
     headless: true,
     channel: "chromium",
+    args: [
+      "--disable-blink-features=AutomationControlled",
+      "--no-first-run",
+      "--no-default-browser-check",
+    ],
   });
 
   const context = await browser.newContext({
     storageState: config.browser.storageStatePath,
+    userAgent:
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    locale: "en-US",
   });
+
+  await applyStealthScripts(context);
 
   const page = await context.newPage();
 
