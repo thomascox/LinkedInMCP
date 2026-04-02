@@ -167,6 +167,41 @@ The tool navigates to the profile, checks for the Message button (1st-degree con
 
 If the user is not a 1st-degree connection, the tool returns an informational message instead of failing.
 
+### `manage_profile`
+
+Read or update your own LinkedIn profile sections.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `action` | `"get_profile"` \| `"update_section"` | Yes | Action to perform |
+| `section` | `"headline"` \| `"about"` | For `update_section` | Section to edit |
+| `text` | `string` | For `update_section` | New content for the section |
+
+**Action: `get_profile`**
+
+Scrapes your own profile and returns structured data:
+
+```json
+{
+  "headline": "Software Engineer at Acme",
+  "about": "Passionate about building great products...",
+  "experience": [
+    {
+      "title": "Software Engineer",
+      "company": "Acme Corp",
+      "duration": "Jan 2022 - Present",
+      "description": "Leading frontend development..."
+    }
+  ]
+}
+```
+
+**Action: `update_section`**
+
+Opens the edit modal for the specified section, clears existing text, types the new content with human-like delay (50-150ms per character), clicks Save, and waits for the confirmation toast.
+
 ## Project Structure
 
 ```
@@ -179,7 +214,8 @@ LinkedInMCP/
 │   └── tools/
 │       ├── auth.ts       # manage_auth_session implementation
 │       ├── search.ts     # search_linkedin implementation
-│       └── messaging.ts  # get_messages + send_linkedin_message
+│       ├── messaging.ts  # get_messages + send_linkedin_message
+│       └── profile.ts    # manage_profile (get_profile + update_section)
 ├── package.json
 └── tsconfig.json
 ```

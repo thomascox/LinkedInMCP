@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-04-02
+
+### Added
+
+- `manage_profile` tool with two actions:
+  - `get_profile` — scrapes the authenticated user's headline, about section (with "see more" expansion), and experience entries (title, company, duration, description)
+  - `update_section` — edits headline or about by opening the appropriate edit modal, clearing existing text with select-all, typing new content with human-like `pressSequentially` delay (50-150ms), clicking Save, and waiting for the confirmation toast
+- Shared `clickModalSave()` helper that clicks Save and waits for modal dismissal
+
 ## [0.3.0] - 2026-04-02
 
 ### Added

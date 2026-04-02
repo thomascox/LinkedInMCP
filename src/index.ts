@@ -6,6 +6,7 @@ import { logger } from "./logger";
 import { handleManageAuthSession } from "./tools/auth";
 import { handleSearchLinkedin } from "./tools/search";
 import { handleGetMessages, handleSendLinkedinMessage } from "./tools/messaging";
+import { handleManageProfile } from "./tools/profile";
 
 const server = new McpServer({
   name: config.server.name,
@@ -125,6 +126,37 @@ server.tool(
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       logger.error("send_linkedin_message failed:", errorMsg);
+      return {
+        content: [{ type: "text", text: `Error: ${errorMsg}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+server.tool(
+  "manage_profile",
+  "Manage your LinkedIn profile. Use 'get_profile' to scrape your headline, about, and experience. Use 'update_section' to edit a specific section (headline or about).",
+  {
+    action: z
+      .enum(["get_profile", "update_section"])
+      .describe("'get_profile' to read profile data, 'update_section' to edit a section"),
+    section: z
+      .enum(["headline", "about"])
+      .optional()
+      .describe("Section to update (required for update_section)"),
+    text: z
+      .string()
+      .optional()
+      .describe("New text content for the section (required for update_section)"),
+  },
+  async (args) => {
+    try {
+      const result = await handleManageProfile(args);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      logger.error("manage_profile failed:", errorMsg);
       return {
         content: [{ type: "text", text: `Error: ${errorMsg}` }],
         isError: true,
