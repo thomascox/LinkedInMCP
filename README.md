@@ -92,6 +92,50 @@ Opens a headed Chromium browser and navigates to LinkedIn's login page. You log 
 
 Launches a headless browser with the saved session state, navigates to the LinkedIn feed, and checks for the presence of the user avatar to confirm the session is still active.
 
+### `search_linkedin`
+
+Search LinkedIn for people or jobs. Returns structured JSON results.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `category` | `"PEOPLE"` \| `"JOBS"` | Yes | Type of search to perform |
+| `keywords` | `string` | Yes | Search keywords |
+| `filters` | `object` | No | Optional filters (see below) |
+
+**Filter options:**
+
+| Name | Type | Applies to | Description |
+|------|------|------------|-------------|
+| `location` | `string` | Both | Location name (e.g. "San Francisco Bay Area") |
+| `remote` | `"onsite"` \| `"remote"` \| `"hybrid"` | Jobs | Work arrangement filter |
+| `experienceLevel` | `"internship"` \| `"entry"` \| `"associate"` \| `"mid-senior"` \| `"director"` \| `"executive"` | Jobs | Experience level filter |
+
+**People results return:**
+```json
+[
+  {
+    "name": "Jane Doe",
+    "headline": "Software Engineer at Acme",
+    "profileUrl": "https://www.linkedin.com/in/janedoe"
+  }
+]
+```
+
+**Job results return:**
+```json
+[
+  {
+    "jobId": "3812345678",
+    "title": "Senior Engineer",
+    "company": "Acme Corp",
+    "location": "San Francisco, CA",
+    "easyApply": true
+  }
+]
+```
+
 ## Project Structure
 
 ```
@@ -101,7 +145,8 @@ LinkedInMCP/
 │   ├── config.ts         # Central configuration (paths, server metadata)
 │   ├── logger.ts         # Stderr logging utility (prevents JSON-RPC corruption)
 │   └── tools/
-│       └── auth.ts       # manage_auth_session implementation
+│       ├── auth.ts       # manage_auth_session implementation
+│       └── search.ts     # search_linkedin implementation
 ├── package.json
 └── tsconfig.json
 ```

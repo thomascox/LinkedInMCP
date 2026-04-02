@@ -4,6 +4,7 @@ import { z } from "zod";
 import { config } from "./config";
 import { logger } from "./logger";
 import { handleManageAuthSession } from "./tools/auth";
+import { handleSearchLinkedin } from "./tools/search";
 
 const server = new McpServer({
   name: config.server.name,
@@ -38,6 +39,44 @@ server.tool(
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       logger.error("manage_auth_session failed:", errorMsg);
+      return {
+        content: [{ type: "text", text: `Error: ${errorMsg}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+server.tool(
+  "search_linkedin",
+  "Search LinkedIn for people or jobs. Returns structured JSON results including profile URLs (people) or job IDs with Easy Apply status (jobs).",
+  {
+    category: z
+      .enum(["PEOPLE", "JOBS"])
+      .describe("Type of LinkedIn search to perform"),
+    keywords: z.string().describe("Search keywords"),
+    filters: z
+      .object({
+        location: z.string().optional().describe("Location name (e.g. 'San Francisco Bay Area')"),
+        remote: z
+          .enum(["onsite", "remote", "hybrid"])
+          .optional()
+          .describe("Work arrangement filter (jobs only)"),
+        experienceLevel: z
+          .enum(["internship", "entry", "associate", "mid-senior", "director", "executive"])
+          .optional()
+          .describe("Experience level filter (jobs only)"),
+      })
+      .optional()
+      .describe("Optional search filters"),
+  },
+  async (args) => {
+    try {
+      const result = await handleSearchLinkedin(args);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      logger.error("search_linkedin failed:", errorMsg);
       return {
         content: [{ type: "text", text: `Error: ${errorMsg}` }],
         isError: true,

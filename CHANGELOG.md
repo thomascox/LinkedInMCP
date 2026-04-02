@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-04-02
+
+### Added
+
+- `search_linkedin` tool with PEOPLE and JOBS categories
+  - People search: scrapes names, headlines, and profile URLs
+  - Jobs search: scrapes job ID, title, company, location, and Easy Apply status
+  - Optional filters for location, remote status, and experience level
+  - Infinite scroll helper to load additional results
+  - Reusable `launchWithSession()` browser helper with session expiry detection
+- Added `"DOM"` to tsconfig `lib` for Playwright `page.evaluate()` browser-context code
+
 ## [0.1.0] - 2026-04-02
 
 ### Added
