@@ -5,6 +5,7 @@ import { config } from "./config";
 import { logger } from "./logger";
 import { handleManageAuthSession } from "./tools/auth";
 import { handleSearchLinkedin } from "./tools/search";
+import { handleGetMessages, handleSendLinkedinMessage } from "./tools/messaging";
 
 const server = new McpServer({
   name: config.server.name,
@@ -77,6 +78,53 @@ server.tool(
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       logger.error("search_linkedin failed:", errorMsg);
+      return {
+        content: [{ type: "text", text: `Error: ${errorMsg}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+server.tool(
+  "get_messages",
+  "Retrieve the last 10 conversation threads from the LinkedIn messaging inbox. Returns sender names and message snippets.",
+  {},
+  async () => {
+    try {
+      const result = await handleGetMessages();
+      return { content: [{ type: "text", text: result }] };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      logger.error("get_messages failed:", errorMsg);
+      return {
+        content: [{ type: "text", text: `Error: ${errorMsg}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+server.tool(
+  "send_linkedin_message",
+  "Send a direct message to a LinkedIn user via their profile URL. Only works for 1st-degree connections where the Message button is available.",
+  {
+    profile_url: z
+      .string()
+      .url()
+      .describe("Full LinkedIn profile URL (e.g. 'https://www.linkedin.com/in/username')"),
+    message_body: z
+      .string()
+      .min(1)
+      .describe("The message text to send"),
+  },
+  async (args) => {
+    try {
+      const result = await handleSendLinkedinMessage(args);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      logger.error("send_linkedin_message failed:", errorMsg);
       return {
         content: [{ type: "text", text: `Error: ${errorMsg}` }],
         isError: true,

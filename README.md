@@ -136,6 +136,37 @@ Search LinkedIn for people or jobs. Returns structured JSON results.
 ]
 ```
 
+### `get_messages`
+
+Retrieve the last 10 conversation threads from the LinkedIn messaging inbox.
+
+**Parameters:** None
+
+**Example response:**
+```json
+[
+  {
+    "senderName": "Jane Doe",
+    "lastMessageSnippet": "Thanks for connecting! I wanted to reach out about..."
+  }
+]
+```
+
+### `send_linkedin_message`
+
+Send a direct message to a LinkedIn user. Only works for 1st-degree connections.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `profile_url` | `string` (URL) | Yes | Full LinkedIn profile URL |
+| `message_body` | `string` | Yes | The message text to send |
+
+The tool navigates to the profile, checks for the Message button (1st-degree connection check), opens the messaging modal, types the message with randomized per-character delay (50-150ms) to mimic human input, and clicks Send.
+
+If the user is not a 1st-degree connection, the tool returns an informational message instead of failing.
+
 ## Project Structure
 
 ```
@@ -144,9 +175,11 @@ LinkedInMCP/
 │   ├── index.ts          # Server entry point, tool registration
 │   ├── config.ts         # Central configuration (paths, server metadata)
 │   ├── logger.ts         # Stderr logging utility (prevents JSON-RPC corruption)
+│   ├── browser.ts        # Shared browser launch + session helpers
 │   └── tools/
 │       ├── auth.ts       # manage_auth_session implementation
-│       └── search.ts     # search_linkedin implementation
+│       ├── search.ts     # search_linkedin implementation
+│       └── messaging.ts  # get_messages + send_linkedin_message
 ├── package.json
 └── tsconfig.json
 ```

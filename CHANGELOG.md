@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-04-02
+
+### Added
+
+- `get_messages` tool — retrieves the last 10 conversation threads from the LinkedIn inbox with sender names and message snippets
+- `send_linkedin_message` tool — sends a direct message to a LinkedIn profile
+  - Checks for Message button availability (1st-degree connection gate)
+  - Uses `pressSequentially` with randomized 50-150ms per-character delay to mimic human typing
+  - Returns informational message instead of erroring when recipient is not a 1st-degree connection
+
+### Changed
+
+- Extracted shared `launchWithSession()` and `ensureAuthenticated()` into `src/browser.ts` to eliminate duplication across tool modules
+- Refactored `search.ts` to use shared browser helpers
+
 ## [0.2.0] - 2026-04-02
 
 ### Added

@@ -1,7 +1,6 @@
-import { chromium, type Page, type Browser, type BrowserContext } from "playwright";
-import fs from "fs";
-import { config } from "../config";
+import { type Page } from "playwright";
 import { logger } from "../logger";
+import { launchWithSession, ensureAuthenticated } from "../browser";
 
 // -- Types -----------------------------------------------------------------
 
@@ -94,32 +93,6 @@ async function scrollToLoadAll(page: Page, maxScrolls: number = 5): Promise<void
     // Wait for either new content or a network idle moment.
     await page.waitForTimeout(2000);
   }
-}
-
-// -- Browser lifecycle helper ----------------------------------------------
-
-async function launchWithSession(): Promise<{ browser: Browser; context: BrowserContext; page: Page }> {
-  if (!fs.existsSync(config.browser.storageStatePath)) {
-    throw new Error(
-      "No saved session found. Run manage_auth_session with action 'capture' first."
-    );
-  }
-
-  const browser = await chromium.launch({
-    headless: true,
-    channel: "chromium",
-  });
-
-  const context = await browser.newContext({
-    storageState: config.browser.storageStatePath,
-    userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    viewport: { width: 1280, height: 800 },
-  });
-
-  const page = await context.newPage();
-  return { browser, context, page };
 }
 
 // -- Scrapers --------------------------------------------------------------
@@ -264,12 +237,7 @@ export async function handleSearchLinkedin(args: {
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
 
-    // Check for auth redirect.
-    if (page.url().includes("/login")) {
-      throw new Error(
-        "Session expired — LinkedIn redirected to login. Re-run manage_auth_session with 'capture'."
-      );
-    }
+    ensureAuthenticated(page);
 
     let results: SearchResult[];
 
