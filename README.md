@@ -202,6 +202,60 @@ Scrapes your own profile and returns structured data:
 
 Opens the edit modal for the specified section, clears existing text, types the new content with human-like delay (50-150ms per character), clicks Save, and waits for the confirmation toast.
 
+### `start_application`
+
+Start an Easy Apply application for a LinkedIn job. Opens the Easy Apply modal and returns the initial form state for the LLM to process.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `job_id` | `string` | Yes | LinkedIn Job ID (from `search_linkedin` results) |
+
+**Returns:** A JSON object containing the current step state:
+
+```json
+{
+  "stepNumber": 1,
+  "isReviewStep": false,
+  "isComplete": false,
+  "fields": [
+    {
+      "type": "text",
+      "label": "Phone number",
+      "name": "phone",
+      "value": "",
+      "required": true
+    }
+  ],
+  "formHtml": "<div>...</div>",
+  "screenshotPath": "/path/to/screenshot.png"
+}
+```
+
+### `fill_application_step`
+
+Fill the current Easy Apply form step and advance. The LLM manages the loop by reading fields from `start_application` or prior step responses and providing answers.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `answers` | `array` | Yes | Array of `{ label, value }` pairs for form fields |
+| `action` | `"next"` \| `"review"` \| `"submit"` | Yes | Advance to next step, review, or submit |
+
+Each answer matches a field by its label text. Supports text inputs, textareas, selects (by option label), radio buttons (by option text), checkboxes (`"true"`/`"false"`), and contenteditable divs.
+
+At the review step, the tool automatically unchecks "Follow company" if checked. On `submit`, it clicks "Submit application" and checks for the success confirmation.
+
+Returns validation errors if the form cannot advance, allowing the LLM to correct and retry.
+
+### `cancel_application`
+
+Cancel an in-progress Easy Apply session and close the browser.
+
+**Parameters:** None
+
 ## Project Structure
 
 ```
@@ -215,7 +269,8 @@ LinkedInMCP/
 │       ├── auth.ts       # manage_auth_session implementation
 │       ├── search.ts     # search_linkedin implementation
 │       ├── messaging.ts  # get_messages + send_linkedin_message
-│       └── profile.ts    # manage_profile (get_profile + update_section)
+│       ├── profile.ts    # manage_profile (get_profile + update_section)
+│       └── easy-apply.ts # start_application + fill_application_step + cancel
 ├── package.json
 └── tsconfig.json
 ```

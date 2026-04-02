@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-04-02
+
+### Added
+
+- `start_application` tool — navigates to a job listing, clicks Easy Apply, captures the initial modal form state (fields, HTML, screenshot), and returns it for LLM processing
+- `fill_application_step` tool — fills form fields by label/value pairs with human-like typing, supports text, textarea, select, radio, checkbox, and contenteditable inputs; advances with next/review/submit actions
+- `cancel_application` tool — cleans up an in-progress Easy Apply browser session
+- Persistent browser session manager for multi-step Easy Apply modal (browser stays alive across tool calls)
+- Automatic "Follow company" checkbox unchecking at the review/submit step
+- Form field extraction covering text, textarea, select, radio groups, checkboxes, and file inputs
+- Validation error detection with re-capture of step state for LLM retry
+- Screenshot capture at each step and on errors (`~/.linkedin-mcp/screenshots/`)
+- `screenshotsDir` added to central config
+
 ## [0.4.0] - 2026-04-02
 
 ### Added

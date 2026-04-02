@@ -7,6 +7,11 @@ import { handleManageAuthSession } from "./tools/auth";
 import { handleSearchLinkedin } from "./tools/search";
 import { handleGetMessages, handleSendLinkedinMessage } from "./tools/messaging";
 import { handleManageProfile } from "./tools/profile";
+import {
+  handleStartApplication,
+  handleFillApplicationStep,
+  handleCleanupApplication,
+} from "./tools/easy-apply";
 
 const server = new McpServer({
   name: config.server.name,
@@ -157,6 +162,77 @@ server.tool(
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       logger.error("manage_profile failed:", errorMsg);
+      return {
+        content: [{ type: "text", text: `Error: ${errorMsg}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+server.tool(
+  "start_application",
+  "Start an Easy Apply application for a LinkedIn job. Navigates to the job, clicks Easy Apply, and returns the initial form state (fields, HTML, screenshot) for the LLM to process. Keeps the browser session alive for subsequent fill_application_step calls.",
+  {
+    job_id: z.string().describe("LinkedIn Job ID (from search_linkedin results)"),
+  },
+  async (args) => {
+    try {
+      const result = await handleStartApplication(args);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      logger.error("start_application failed:", errorMsg);
+      return {
+        content: [{ type: "text", text: `Error: ${errorMsg}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+server.tool(
+  "fill_application_step",
+  "Fill the current Easy Apply form step with answers and advance. Provide field answers as label/value pairs. Use action 'next' to go to the next step, 'review' to go to review, or 'submit' to submit the final application. Returns the next step's form state. Automatically unchecks 'Follow company' at the review step.",
+  {
+    answers: z
+      .array(
+        z.object({
+          label: z.string().describe("The field label as shown in the form"),
+          value: z.string().describe("The value to fill in"),
+        })
+      )
+      .describe("Array of field answers to fill in the current step"),
+    action: z
+      .enum(["next", "review", "submit"])
+      .describe("'next' to advance, 'review' to go to review, 'submit' to submit the application"),
+  },
+  async (args) => {
+    try {
+      const result = await handleFillApplicationStep(args);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      logger.error("fill_application_step failed:", errorMsg);
+      return {
+        content: [{ type: "text", text: `Error: ${errorMsg}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+server.tool(
+  "cancel_application",
+  "Cancel and clean up an in-progress Easy Apply session. Closes the browser and resets state.",
+  {},
+  async () => {
+    try {
+      const result = await handleCleanupApplication();
+      return { content: [{ type: "text", text: result }] };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      logger.error("cancel_application failed:", errorMsg);
       return {
         content: [{ type: "text", text: `Error: ${errorMsg}` }],
         isError: true,
