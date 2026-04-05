@@ -1,6 +1,7 @@
 import { type Page } from "playwright";
 import { logger } from "../logger";
 import { launchWithSession, ensureAuthenticated } from "../browser";
+import { compactJson, randomDelay } from "../response-utils";
 
 // -- Types -----------------------------------------------------------------
 
@@ -18,12 +19,6 @@ interface ProfileData {
 type EditableSection = "headline" | "about";
 
 const MY_PROFILE_URL = "https://www.linkedin.com/in/me/";
-
-// -- Helpers ---------------------------------------------------------------
-
-function randomDelay(): number {
-  return Math.floor(Math.random() * (150 - 50 + 1)) + 50;
-}
 
 // -- get_profile -----------------------------------------------------------
 
@@ -149,7 +144,7 @@ async function getProfile(): Promise<string> {
       `${experience.length} experience entries.`
     );
 
-    return JSON.stringify(profileData, null, 2);
+    return compactJson(profileData);
   } finally {
     await browser.close();
   }
@@ -333,7 +328,157 @@ async function clickModalSave(page: Page, modal: ReturnType<Page["locator"]>): P
   await modal.waitFor({ state: "hidden", timeout: 15000 });
 }
 
+// -- view_profile (any public profile) ------------------------------------
+
+async function viewProfile(profileUrl: string): Promise<string> {
+  logger.info(`Viewing profile: ${profileUrl}`);
+
+  const { browser, page } = await launchWithSession();
+
+  try {
+    await page.goto(profileUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    ensureAuthenticated(page);
+
+    await page.waitForSelector(
+      "div.pv-top-card, section.pv-top-card, main.scaffold-layout__main",
+      { timeout: 15000 }
+    );
+    // Wait for the headline to hydrate (profile sections render after top card skeleton)
+    await page.waitForSelector(
+      "div.text-body-medium.break-words, h1",
+      { timeout: 10000 }
+    ).catch(() => {});
+
+    // Expand About if truncated
+    const aboutSeeMore = page.locator(
+      'section:has(#about) button:has-text("see more"), ' +
+      'div#about ~ div button:has-text("see more")'
+    ).first();
+    if (await aboutSeeMore.isVisible().catch(() => false)) {
+      await aboutSeeMore.click();
+      await page.waitForTimeout(500);
+    }
+
+    const data = await page.evaluate(() => {
+      const main = document.querySelector("main") || document;
+
+      // Name
+      const name =
+        main.querySelector("h1.text-heading-xlarge, h1.pv-top-card--list h1, h1")
+          ?.textContent?.trim() || "";
+
+      // Headline
+      const headline =
+        main.querySelector("div.text-body-medium.break-words")
+          ?.textContent?.trim() || "";
+
+      // Location
+      const location =
+        main.querySelector(
+          "span.text-body-small.inline.t-black--light.break-words, " +
+          "span.pv-top-card--list-bullet span"
+        )?.textContent?.trim() || "";
+
+      // Connection degree
+      const degree =
+        main.querySelector(
+          "span.dist-value, span[class*='connection-degree']"
+        )?.textContent?.trim() || "";
+
+      // About
+      const about =
+        main.querySelector(
+          "section:has(#about) div.display-flex.full-width span[aria-hidden='true'], " +
+          "section:has(#about) div.inline-show-more-text span[aria-hidden='true']"
+        )?.textContent?.trim() || "";
+
+      // Experience (top 5)
+      const expSection =
+        document.querySelector("section:has(#experience)") ||
+        document.querySelector("div#experience")?.closest("section");
+
+      const experience: { title: string; company: string; duration: string }[] = [];
+      if (expSection) {
+        const entries = expSection.querySelectorAll(
+          "li.artdeco-list__item, li.pvs-list__paged-list-item"
+        );
+        const limit = Math.min(entries.length, 5);
+        for (let i = 0; i < limit; i++) {
+          const e = entries[i];
+          const titleEl =
+            e.querySelector("div.display-flex.align-items-center.mr1 span[aria-hidden='true']") ||
+            e.querySelector("span.t-bold span[aria-hidden='true']");
+          const companyEl =
+            e.querySelector("span.t-14.t-normal span[aria-hidden='true']");
+          const durationEl =
+            e.querySelector("span.t-14.t-normal.t-black--light span[aria-hidden='true']");
+
+          const title = titleEl?.textContent?.trim() || "";
+          const company = companyEl?.textContent?.trim() || "";
+          const duration = durationEl?.textContent?.trim() || "";
+          if (title || company) experience.push({ title, company, duration });
+        }
+      }
+
+      // Education (top 3)
+      const eduSection =
+        document.querySelector("section:has(#education)") ||
+        document.querySelector("div#education")?.closest("section");
+
+      const education: { school: string; degree: string; years: string }[] = [];
+      if (eduSection) {
+        const entries = eduSection.querySelectorAll(
+          "li.artdeco-list__item, li.pvs-list__paged-list-item"
+        );
+        const limit = Math.min(entries.length, 3);
+        for (let i = 0; i < limit; i++) {
+          const e = entries[i];
+          const schoolEl =
+            e.querySelector("span.t-bold span[aria-hidden='true']");
+          const degreeEl =
+            e.querySelector("span.t-14.t-normal span[aria-hidden='true']");
+          const yearsEl =
+            e.querySelector("span.t-14.t-normal.t-black--light span[aria-hidden='true']");
+
+          const school = schoolEl?.textContent?.trim() || "";
+          const deg = degreeEl?.textContent?.trim() || "";
+          const years = yearsEl?.textContent?.trim() || "";
+          if (school) education.push({ school, degree: deg, years });
+        }
+      }
+
+      // Skills (top 10)
+      const skillsSection =
+        document.querySelector("section:has(#skills)") ||
+        document.querySelector("div#skills")?.closest("section");
+
+      const skills: string[] = [];
+      if (skillsSection) {
+        const skillEls = skillsSection.querySelectorAll(
+          "span.t-bold span[aria-hidden='true']"
+        );
+        const limit = Math.min(skillEls.length, 10);
+        for (let i = 0; i < limit; i++) {
+          const skill = skillEls[i]?.textContent?.trim() || "";
+          if (skill) skills.push(skill);
+        }
+      }
+
+      return { name, headline, location, degree, about, experience, education, skills };
+    });
+
+    logger.info(`Profile scraped: "${data.name}" — ${data.experience.length} exp entries.`);
+    return compactJson(data);
+  } finally {
+    await browser.close();
+  }
+}
+
 // -- Exported handler ------------------------------------------------------
+
+export async function handleViewProfile(args: { profile_url: string }): Promise<string> {
+  return viewProfile(args.profile_url);
+}
 
 export async function handleManageProfile(args: {
   action: string;

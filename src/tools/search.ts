@@ -1,6 +1,7 @@
 import { type Page } from "playwright";
 import { logger } from "../logger";
 import { launchWithSession, ensureAuthenticated } from "../browser";
+import { compactJson } from "../response-utils";
 
 // -- Types -----------------------------------------------------------------
 
@@ -248,7 +249,7 @@ export async function handleSearchLinkedin(args: {
     }
 
     logger.info(`Scraped ${results.length} ${category.toLowerCase()} results.`);
-    return JSON.stringify(results, null, 2);
+    return compactJson(results);
   } finally {
     await browser.close();
   }

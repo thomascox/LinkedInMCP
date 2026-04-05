@@ -2,7 +2,7 @@
 
 A Model Context Protocol (MCP) server that provides LinkedIn automation tools via Playwright browser control. Designed to work with MCP clients like Claude Desktop over the Stdio transport.
 
-Includes built-in stealth measures to reduce automation detection and a global rate limiter (10-30s randomized delay between actions) for safe, human-paced operation.
+Includes built-in stealth measures to reduce automation detection and a global rate limiter (10-30s randomized delay between actions) for safe, human-paced operation. All tool responses use semantic data reduction — null/empty fields are stripped, text is capped, and only the relevant DOM section is scraped — keeping token usage low.
 
 ## Quick Start
 
@@ -63,12 +63,6 @@ Then open `~/Library/Application Support/Claude/claude_desktop_config.json` and 
 
 Restart Claude Desktop.
 
-## Prerequisites
-
-- **Node.js** >= 18
-- **Git**
-- Chromium (installed automatically by the installer or `npx playwright install chromium`)
-
 ## Configuration
 
 The server stores browser data and session state in `~/.linkedin-mcp/`:
@@ -98,17 +92,30 @@ Every browser context launched by the server has stealth patches applied automat
 
 ### Rate Limiter
 
-A global rate limiter enforces a randomized delay of **10-30 seconds** between every LinkedIn action. This applies to all tool calls that interact with LinkedIn (search, messaging, profile, applications). The delay is measured from the completion of the previous action, so natural pauses between LLM reasoning steps count toward the wait.
+A global rate limiter enforces a randomized delay of **10-30 seconds** between every LinkedIn action. This applies to all tool calls that interact with LinkedIn. The delay is measured from the completion of the previous action, so natural pauses between LLM reasoning steps count toward the wait.
+
+### Token Efficiency
+
+All tools use semantic data reduction to minimize context usage:
+
+- `compactJson` — strips null/empty fields before returning JSON (no indentation)
+- DOM scraping scoped to `[role="main"]` or the specific modal/section — navigation, ads, and tracking scripts are never included
+- Long text fields (job descriptions, post bodies, message bodies) capped at the scraper level
+- Tool descriptions act as mini-prompts with retry guidance and edge-case handling built in
+
+---
 
 ## Tools
 
-### `linkedin_ping`
+### Authentication
+
+#### `linkedin_ping`
 
 Health check to confirm the server is running.
 
 **Parameters:** None
 
-### `manage_auth_session`
+#### `manage_auth_session`
 
 Manage LinkedIn authentication sessions.
 
@@ -119,9 +126,15 @@ Manage LinkedIn authentication sessions.
 - **`capture`** — Opens a headed browser, navigates to login, waits for you to log in, saves session cookies.
 - **`verify`** — Headless check that the saved session is still valid (loads feed, checks for avatar).
 
-### `search_linkedin`
+Sessions expire after ~24-48 hours. If any tool returns a session-expired error, re-run with `capture`.
 
-Search LinkedIn for people or jobs. Returns structured JSON results.
+---
+
+### Search
+
+#### `search_linkedin`
+
+Search LinkedIn for people or jobs. Returns compact JSON results.
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
@@ -137,34 +150,23 @@ Search LinkedIn for people or jobs. Returns structured JSON results.
 | `remote` | `"onsite"` \| `"remote"` \| `"hybrid"` | Jobs | Work arrangement filter |
 | `experienceLevel` | `"internship"` \| `"entry"` \| `"associate"` \| `"mid-senior"` \| `"director"` \| `"executive"` | Jobs | Experience level filter |
 
-**People results:**
-```json
-[{ "name": "Jane Doe", "headline": "Engineer at Acme", "profileUrl": "https://www.linkedin.com/in/janedoe" }]
-```
+**People result shape:** `{ name, headline, profileUrl }`
 
-**Job results:**
-```json
-[{ "jobId": "3812345678", "title": "Senior Engineer", "company": "Acme Corp", "location": "SF, CA", "easyApply": true }]
-```
+**Job result shape:** `{ jobId, title, company, location, easyApply }`
 
-### `get_messages`
+---
 
-Retrieve the last 10 conversation threads from the LinkedIn messaging inbox.
+### Profile
 
-**Parameters:** None
+#### `view_profile`
 
-### `send_linkedin_message`
-
-Send a direct message to a LinkedIn user. Only works for 1st-degree connections.
+View any LinkedIn profile by URL. Returns structured JSON with name, headline, location, connection degree, about, experience (top 5), education (top 3), and skills (top 10).
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `profile_url` | `string` (URL) | Yes | Full LinkedIn profile URL |
-| `message_body` | `string` | Yes | The message text to send |
+| `profile_url` | `string` (URL) | Yes | Full LinkedIn profile URL (e.g. `https://www.linkedin.com/in/username`) |
 
-Checks for the Message button (1st-degree gate), types with human-like delay (50-150ms per character), and clicks Send.
-
-### `manage_profile`
+#### `manage_profile`
 
 Read or update your own LinkedIn profile sections.
 
@@ -174,54 +176,206 @@ Read or update your own LinkedIn profile sections.
 | `section` | `"headline"` \| `"about"` | For `update_section` | Section to edit |
 | `text` | `string` | For `update_section` | New content |
 
-- **`get_profile`** — Returns headline, about, and experience as JSON.
-- **`update_section`** — Opens edit modal, clears text, types new content, saves, waits for toast.
+- **`get_profile`** — Returns your headline, about, and experience as compact JSON.
+- **`update_section`** — Opens edit modal, clears text, types new content with human-like delay, saves, and waits for the confirmation toast.
 
-### `start_application`
+---
 
-Start an Easy Apply application for a LinkedIn job.
+### Connections
+
+#### `send_connection_request`
+
+Send a LinkedIn connection request. Returns `status`: `sent` | `already_connected` | `pending` | `limit_reached` | `connect_button_not_found`.
+
+> **Important:** If status is `limit_reached`, stop — LinkedIn enforces a weekly invitation cap.
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `profile_url` | `string` (URL) | Yes | Full LinkedIn profile URL |
+| `note` | `string` | No | Personal note to include (max 300 chars) |
+
+#### `get_connections`
+
+List your LinkedIn connections. Returns up to 20 with name, headline, and profile URL.
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `search` | `string` | No | Filter connections by name |
+
+#### `manage_connection_requests`
+
+Manage incoming connection requests.
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `action` | `"list_received"` \| `"accept"` \| `"decline"` | Yes | Action to perform |
+| `profile_url` | `string` (URL) | For `accept`/`decline` | Profile URL of the person to respond to |
+
+- **`list_received`** — Returns pending invites with name, headline, profileUrl, and mutualConnections.
+- **`accept`** / **`decline`** — Responds to the matching invitation.
+
+---
+
+### Jobs
+
+#### `get_job_details`
+
+Get full details for a LinkedIn job posting.
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `job_id` | `string` | Yes | LinkedIn Job ID (from `search_linkedin`) |
+
+Returns: `title`, `company`, `location`, `workplaceType`, `postedDate`, `applicantCount`, `easyApply`, `description` (capped at 2000 chars).
+
+#### `save_job`
+
+Bookmark a job for later. Returns `status`: `saved` | `already_saved`.
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `job_id` | `string` | Yes | LinkedIn Job ID |
 
-Returns the initial form state (fields, HTML, screenshot path) for the LLM. Keeps the browser alive for `fill_application_step`.
+#### `get_saved_jobs`
 
-### `fill_application_step`
+Retrieve your saved/bookmarked jobs. Returns up to 20 in the same shape as `search_linkedin` job results.
+
+**Parameters:** None
+
+---
+
+### Easy Apply
+
+#### `start_application`
+
+Start an Easy Apply application for a LinkedIn job. Returns the initial form state (fields + summary) and keeps the browser alive for subsequent `fill_application_step` calls.
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `job_id` | `string` | Yes | LinkedIn Job ID |
+
+If the Easy Apply button is not found, the job may not support Easy Apply or the listing was removed.
+
+#### `fill_application_step`
 
 Fill the current Easy Apply form step and advance.
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `answers` | `array` | Yes | Array of `{ label, value }` pairs |
-| `action` | `"next"` \| `"review"` \| `"submit"` | Yes | Action to take |
+| `answers` | `array` | Yes | Array of `{ label, value }` pairs matching form field labels |
+| `action` | `"next"` \| `"review"` \| `"submit"` | Yes | Step action to take |
 
-Auto-unchecks "Follow company" at review. Returns validation errors for LLM retry.
+Auto-unchecks "Follow company" at the review step. Returns validation errors for LLM retry when required fields are missing.
 
-### `cancel_application`
+#### `cancel_application`
 
 Cancel an in-progress Easy Apply session and close the browser.
 
 **Parameters:** None
+
+---
+
+### Messaging
+
+#### `get_messages`
+
+Retrieve the last 10 conversation threads from the LinkedIn messaging inbox. Returns sender name, last message snippet, and a `conversationUrl` for use with `get_conversation`.
+
+**Parameters:** None
+
+#### `get_conversation`
+
+Read the full message history of a conversation thread. Returns up to 20 messages with sender, text (capped at 500 chars), and timestamp.
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `conversation_url` | `string` (URL) | Yes | LinkedIn conversation thread URL (from `get_messages`) |
+
+#### `send_linkedin_message`
+
+Send a direct message to a LinkedIn user. Only works for 1st-degree connections.
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `profile_url` | `string` (URL) | Yes | Full LinkedIn profile URL |
+| `message_body` | `string` | Yes | The message text to send |
+
+#### `get_unread_count`
+
+Get the count of unread messages and notifications from the LinkedIn nav badges.
+
+**Parameters:** None
+
+Returns: `{ unreadMessages, unreadNotifications }`
+
+---
+
+### Feed & Content
+
+#### `get_feed`
+
+Fetch the top 10 non-promoted posts from your LinkedIn home feed. Returns author, headline, post text snippet (300 chars), reaction count, comment count, and post URL.
+
+**Parameters:** None
+
+#### `create_post`
+
+Create a new LinkedIn post.
+
+> **Important:** Always confirm post content with the user before calling — posts are immediately visible to your network.
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `text` | `string` | Yes | The post content to publish |
+| `visibility` | `"anyone"` \| `"connections"` | No | Who can see the post (default: `"anyone"`) |
+
+#### `react_to_post`
+
+React to a LinkedIn post with a specific reaction type.
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `post_url` | `string` (URL) | Yes | Full LinkedIn post URL (from `get_feed`) |
+| `reaction` | `"like"` \| `"celebrate"` \| `"support"` \| `"funny"` \| `"love"` \| `"insightful"` | Yes | Reaction to apply |
+
+If the reaction picker doesn't open, fall back to `"like"`.
+
+---
+
+### Notifications
+
+#### `get_notifications`
+
+Fetch your 10 most recent LinkedIn notifications. Returns `type` (`connection` | `job` | `reaction` | `comment` | `mention` | `birthday` | `work_anniversary` | `profile_view` | `post_share`), actor name, text snippet (200 chars), and timestamp.
+
+**Parameters:** None
+
+---
 
 ## Project Structure
 
 ```
 LinkedInMCP/
 ├── src/
-│   ├── index.ts          # Server entry point, tool registration
-│   ├── config.ts         # Central configuration (paths, server metadata)
-│   ├── logger.ts         # Stderr logging utility (prevents JSON-RPC corruption)
-│   ├── browser.ts        # Shared browser launch + session + stealth + rate limit
-│   ├── stealth.ts        # Anti-detection init scripts (navigator, WebGL, chrome, etc.)
-│   ├── rate-limiter.ts   # Global 10-30s randomized delay between actions
+│   ├── index.ts            # Server entry point, all tool registration
+│   ├── config.ts           # Central configuration (paths, server metadata)
+│   ├── logger.ts           # Stderr logging utility (prevents JSON-RPC corruption)
+│   ├── browser.ts          # Shared browser launch + session + stealth + rate limit
+│   ├── stealth.ts          # Anti-detection init scripts (navigator, WebGL, chrome, etc.)
+│   ├── rate-limiter.ts     # Global 10-30s randomized delay between actions
+│   ├── response-utils.ts   # compactJson, fieldsToSummary, randomDelay
 │   └── tools/
-│       ├── auth.ts       # manage_auth_session implementation
-│       ├── search.ts     # search_linkedin implementation
-│       ├── messaging.ts  # get_messages + send_linkedin_message
-│       ├── profile.ts    # manage_profile (get_profile + update_section)
-│       └── easy-apply.ts # start_application + fill_application_step + cancel
-├── dist/                 # Compiled JavaScript (generated by npm run build)
+│       ├── auth.ts         # manage_auth_session
+│       ├── search.ts       # search_linkedin
+│       ├── profile.ts      # view_profile, manage_profile
+│       ├── connections.ts  # send_connection_request, get_connections, manage_connection_requests
+│       ├── jobs.ts         # get_job_details, save_job, get_saved_jobs
+│       ├── messaging.ts    # get_messages, get_conversation, send_linkedin_message, get_unread_count
+│       ├── feed.ts         # get_feed, create_post, react_to_post
+│       ├── notifications.ts# get_notifications, get_unread_count
+│       └── easy-apply.ts   # start_application, fill_application_step, cancel_application
+├── dist/                   # Compiled JavaScript (generated by npm run build)
+├── install.sh              # One-command installer
 ├── package.json
 └── tsconfig.json
 ```

@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.1] - 2026-04-05
+
+### Changed
+
+- Extracted `randomDelay()` into `response-utils.ts` — was duplicated identically in `easy-apply.ts`, `messaging.ts`, `profile.ts`, and `feed.ts`
+- Removed dead `inferNotificationType` export from `notifications.ts` (logic is inline inside `page.evaluate` where it belongs)
+- Added `ConnectionAction` type alias in `connections.ts` to replace inline union duplicated across function signature and exported handler
+- Replaced N+1 Playwright `getAttribute()` loop in `manageConnectionRequests` with a single `page.evaluate()` call to locate the matching invitation card by index
+- Replaced blind `waitForTimeout` calls in `getFeed`, `viewProfile`, and `getJobDetails` with `waitForSelector` on actual content elements — more reliable and faster
+- Replaced dead-code `waitForTimeout(2000)` in `getConversation` (comment referenced a scroll that was never performed) with `waitForSelector` on message bubble content
+
+## [0.7.0] - 2026-04-05
+
+### Added
+
+- **Semantic data reduction** — all tools now return `compactJson` (strips null/empty fields, no indentation); DOM scraping scoped to `[role="main"]` or specific section; long text fields capped at the scraper level; tool descriptions act as mini-prompts with retry and edge-case guidance
+- `response-utils.ts` — shared `compactJson`, `fieldsToSummary`, and `randomDelay` utilities
+- **`view_profile`** — scrape any LinkedIn profile by URL; returns name, headline, location, connection degree, about, experience (top 5), education (top 3), skills (top 10)
+- **`send_connection_request`** — send a connection request with optional note; returns `sent | already_connected | pending | limit_reached | connect_button_not_found`
+- **`get_connections`** — list up to 20 connections with optional name filter
+- **`manage_connection_requests`** — list pending invites, or accept/decline a specific request by profile URL
+- **`get_job_details`** — full job posting details including description (capped at 2000 chars), workplace type, applicant count, and Easy Apply status
+- **`save_job`** — bookmark a job by ID; returns `saved | already_saved`
+- **`get_saved_jobs`** — retrieve up to 20 saved/bookmarked jobs in the same shape as `search_linkedin` results
+- **`get_conversation`** — read up to 20 messages from a conversation thread (URL from `get_messages`)
+- **`get_unread_count`** — read unread message and notification badge counts from the nav
+- **`get_feed`** — fetch top 10 non-promoted posts from the home feed with author, text snippet, reaction count, comment count, and post URL
+- **`create_post`** — publish a post with configurable visibility (`anyone` | `connections`)
+- **`react_to_post`** — react to a post with `like | celebrate | support | funny | love | insightful`
+- **`get_notifications`** — fetch 10 most recent notifications with inferred type, actor, text snippet, and timestamp
+
+### Changed
+
+- `get_messages` now includes `conversationUrl` in each thread result for use with `get_conversation`
+- `manage_profile get_profile` response switched from pretty-printed JSON to `compactJson`
+- `search_linkedin` response switched to `compactJson`
+
 ## [0.6.1] - 2026-04-02
 
 ### Changed

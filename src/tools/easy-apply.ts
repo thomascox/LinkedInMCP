@@ -4,6 +4,7 @@ import path from "path";
 import { config } from "../config";
 import { logger } from "../logger";
 import { launchWithSession, ensureAuthenticated, rateLimit } from "../browser";
+import { compactJson, fieldsToSummary, randomDelay } from "../response-utils";
 
 // -- Types -----------------------------------------------------------------
 
@@ -22,7 +23,7 @@ interface StepState {
   isReviewStep: boolean;
   isComplete: boolean;
   fields: FormField[];
-  formHtml: string;
+  formSummary: string;
   screenshotPath: string;
 }
 
@@ -61,10 +62,6 @@ function ensureActiveSession(): Page {
 }
 
 // -- Helpers ---------------------------------------------------------------
-
-function randomDelay(): number {
-  return Math.floor(Math.random() * (150 - 50 + 1)) + 50;
-}
 
 function ensureScreenshotDir(): void {
   if (!fs.existsSync(config.browser.screenshotsDir)) {
@@ -210,19 +207,6 @@ async function extractFormFields(page: Page): Promise<FormField[]> {
   });
 }
 
-async function extractFormHtml(page: Page): Promise<string> {
-  const modal = getModalLocator(page);
-  return modal.evaluate((el) => {
-    // Return a cleaned-up version of the form HTML for the LLM.
-    const formArea =
-      el.querySelector('div.jobs-easy-apply-form-section__grouping') ||
-      el.querySelector('div.pb4') ||
-      el.querySelector('form') ||
-      el;
-    return formArea.innerHTML;
-  });
-}
-
 async function detectReviewStep(page: Page): Promise<boolean> {
   const modal = getModalLocator(page);
 
@@ -286,7 +270,7 @@ async function captureStepState(page: Page): Promise<StepState> {
   }
 
   const fields = await extractFormFields(page);
-  const formHtml = await extractFormHtml(page);
+  const formSummary = fieldsToSummary(fields);
   const screenshotPath = await captureScreenshot(page, `step-${currentStep}`);
 
   return {
@@ -294,7 +278,7 @@ async function captureStepState(page: Page): Promise<StepState> {
     isReviewStep: isReview,
     isComplete: false,
     fields,
-    formHtml,
+    formSummary,
     screenshotPath,
   };
 }
@@ -337,7 +321,7 @@ async function startApplication(jobId: string): Promise<string> {
     const easyApplyVisible = await easyApplyButton.isVisible().catch(() => false);
     if (!easyApplyVisible) {
       await cleanupSession();
-      return JSON.stringify({
+      return compactJson({
         error: true,
         message: "Easy Apply button not found. This job may not support Easy Apply, or the listing may have been removed.",
       });
@@ -359,7 +343,7 @@ async function startApplication(jobId: string): Promise<string> {
       `${stepState.fields.length} fields found.`
     );
 
-    return JSON.stringify(stepState, null, 2);
+    return compactJson(stepState);
   } catch (err) {
     await cleanupSession();
     throw err;
@@ -415,18 +399,15 @@ async function fillApplicationStep(
       const screenshotPath = await captureScreenshot(page, "submitted");
       await cleanupSession();
 
-      return JSON.stringify({
+      return compactJson({
         stepNumber: currentStep,
         isComplete: true,
-        isReviewStep: false,
         submitted,
         message: submitted
           ? "Application submitted successfully!"
           : "Submit was clicked. Check screenshot to verify completion.",
         screenshotPath,
-        fields: [],
-        formHtml: "",
-      }, null, 2);
+      });
     }
 
     // "Next" or "Review" button.
@@ -455,10 +436,10 @@ async function fillApplicationStep(
     if (hasError) {
       const errorText = await validationError.textContent().then((t) => t?.trim() || "").catch(() => "");
       const stepState = await captureStepState(page);
-      return JSON.stringify({
+      return compactJson({
         ...stepState,
         validationError: errorText || "Form validation failed. Check required fields.",
-      }, null, 2);
+      });
     }
 
     currentStep++;
@@ -469,7 +450,7 @@ async function fillApplicationStep(
       `${stepState.fields.length} fields found.`
     );
 
-    return JSON.stringify(stepState, null, 2);
+    return compactJson(stepState);
   } catch (err) {
     // Take a diagnostic screenshot before propagating.
     await captureScreenshot(page, "error").catch(() => {});

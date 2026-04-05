@@ -1,6 +1,6 @@
 {
   "name": "linkedin-mcp-server",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "description": "LinkedIn MCP server using Playwright for browser automation",
   "private": true,
   "bin": {
