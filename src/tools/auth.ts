@@ -88,9 +88,6 @@ async function verifySession(): Promise<string> {
 
   const context = await browser.newContext({
     storageState: config.browser.storageStatePath,
-    userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     locale: "en-US",
   });
 

@@ -38,9 +38,8 @@ export async function launchWithSession(): Promise<BrowserSession> {
 
   const context = await browser.newContext({
     storageState: config.browser.storageStatePath,
-    userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    // No explicit userAgent — use the real Chromium UA so it matches what
+    // LinkedIn saw during the capture login session.
     viewport: { width: 1280, height: 800 },
     locale: "en-US",
     timezoneId: "America/New_York",
@@ -53,9 +52,15 @@ export async function launchWithSession(): Promise<BrowserSession> {
 }
 
 export function ensureAuthenticated(page: Page): void {
-  if (page.url().includes("/login")) {
+  const url = page.url();
+  if (
+    url.includes("/login") ||
+    url.includes("/authwall") ||
+    url.includes("/checkpoint/")
+  ) {
     throw new Error(
-      "Session expired — LinkedIn redirected to login. Re-run manage_auth_session with 'capture'."
+      "Session expired or blocked — LinkedIn redirected to an auth page " +
+      `(${url}). Re-run manage_auth_session with 'capture'.`
     );
   }
 }
