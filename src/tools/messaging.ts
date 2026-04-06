@@ -34,56 +34,39 @@ async function getMessages(): Promise<string> {
 
   try {
     await page.goto("https://www.linkedin.com/messaging/", {
-      waitUntil: "domcontentloaded",
-      timeout: 30000,
+      waitUntil: "load",
+      timeout: 45000,
     });
-
-    ensureAuthenticated(page);
-
-    // Wait for the conversation list to render.
-    await page.waitForSelector(
-      'li.msg-conversation-listitem, li.msg-conversations-container__convo-item, ul.msg-conversations-container__conversations-list li',
-      { timeout: 15000 }
-    );
-
-    // Short pause for any lazy-loaded content.
     await page.waitForTimeout(2000);
+    ensureAuthenticated(page);
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() =>
+      page.waitForTimeout(3000)
+    );
 
     const threads: ConversationThread[] = await page.evaluate(() => {
       const items: { senderName: string; lastMessageSnippet: string; conversationUrl: string }[] = [];
 
-      const convos = document.querySelectorAll(
-        'li.msg-conversation-listitem, li.msg-conversations-container__convo-item'
-      );
+      // Stable: messaging thread links always contain /messaging/thread/
+      const links = Array.from(
+        document.querySelectorAll('a[href*="/messaging/thread/"]')
+      ) as HTMLAnchorElement[];
+      const seen = new Set<string>();
 
-      const limit = Math.min(convos.length, 10);
+      for (const link of links) {
+        const conversationUrl = link.href;
+        if (seen.has(conversationUrl)) continue;
+        seen.add(conversationUrl);
 
-      for (let i = 0; i < limit; i++) {
-        const convo = convos[i];
+        const container = link.closest("li") || link.parentElement;
+        const texts = Array.from(container?.querySelectorAll("span, p") || [])
+          .map((el) => el.textContent?.trim())
+          .filter((t): t is string => !!t && t.length > 1);
 
-        const nameEl =
-          convo.querySelector('h3.msg-conversation-listitem__participant-names span') ||
-          convo.querySelector('h3.msg-conversation-card__participant-names span') ||
-          convo.querySelector('span.msg-conversation-listitem__participant-names');
-
-        const snippetEl =
-          convo.querySelector('p.msg-conversation-listitem__message-snippet') ||
-          convo.querySelector('p.msg-conversation-card__message-snippet') ||
-          convo.querySelector('span.msg-conversation-listitem__message-snippet-body');
-
-        // Extract conversation URL from the thread link
-        const linkEl = convo.querySelector(
-          'a[href*="/messaging/thread/"], a.msg-conversation-listitem__link'
-        ) as HTMLAnchorElement | null;
-        let conversationUrl = linkEl?.href || "";
-        if (conversationUrl && !conversationUrl.startsWith("http")) {
-          conversationUrl = `https://www.linkedin.com${conversationUrl}`;
-        }
-
-        const senderName = nameEl?.textContent?.trim() || "Unknown";
-        const lastMessageSnippet = snippetEl?.textContent?.trim() || "";
+        const senderName = texts[0] || "Unknown";
+        const lastMessageSnippet = texts[1] || "";
 
         items.push({ senderName, lastMessageSnippet, conversationUrl });
+        if (items.length >= 10) break;
       }
 
       return items;
@@ -104,17 +87,12 @@ async function sendMessage(profileUrl: string, messageBody: string): Promise<str
   const { browser, page } = await launchWithSession();
 
   try {
-    await page.goto(profileUrl, {
-      waitUntil: "domcontentloaded",
-      timeout: 30000,
-    });
-
+    await page.goto(profileUrl, { waitUntil: "load", timeout: 45000 });
+    await page.waitForTimeout(2000);
     ensureAuthenticated(page);
-
-    // Wait for profile actions section to load.
-    await page.waitForSelector(
-      'div.pv-top-card, section.pv-top-card, main.scaffold-layout__main',
-      { timeout: 15000 }
+    await page.waitForFunction(
+      () => document.title.includes("| LinkedIn") && document.title.length > 15,
+      { timeout: 30000 }
     );
 
     // Look for the Message button — only available for 1st-degree connections.
@@ -184,61 +162,38 @@ async function getConversation(conversationUrl: string): Promise<string> {
   const { browser, page } = await launchWithSession();
 
   try {
-    await page.goto(conversationUrl, {
-      waitUntil: "domcontentloaded",
-      timeout: 30000,
-    });
+    await page.goto(conversationUrl, { waitUntil: "load", timeout: 45000 });
+    await page.waitForTimeout(2000);
     ensureAuthenticated(page);
-
-    await page.waitForSelector(
-      "ul.msg-s-message-list, div.msg-s-message-list-container, main",
-      { timeout: 15000 }
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() =>
+      page.waitForTimeout(3000)
     );
-
-    // Wait for at least one message bubble to render
-    await page.waitForSelector(
-      "p.msg-s-event-listitem__body, div.msg-s-event__content p",
-      { timeout: 10000 }
-    ).catch(() => {});
 
     const messages: Message[] = await page.evaluate(() => {
       const items: { sender: string; text: string; time: string }[] = [];
 
-      // Messages are grouped by sender/time blocks
-      const groups = document.querySelectorAll(
-        "li.msg-s-message-list__event, " +
-        "div.msg-s-event-listitem"
-      );
+      // Collect all <p> elements in the message area; each is a message bubble
+      // time elements are siblings or nearby; sender is in an <a> or <span> preceding them
+      const main = document.querySelector("main") || document;
+      const allPs = Array.from(main.querySelectorAll("p"))
+        .filter((el) => (el as HTMLElement).offsetParent !== null);
 
-      // Walk all message groups, collecting up to 20 messages
-      for (let i = 0; i < groups.length && items.length < 20; i++) {
-        const group = groups[i];
+      for (const p of allPs) {
+        const text = (p.textContent?.trim() || "").slice(0, 500);
+        if (!text || text.length < 2) continue;
 
-        // Each group may have multiple bubble items
-        const bubbles = group.querySelectorAll(
-          "p.msg-s-event-listitem__body, " +
-          "span.msg-s-event-listitem__body, " +
-          "div.msg-s-event__content p"
-        );
+        // Time from nearest <time> element in same container
+        const container = p.parentElement;
+        const timeEl = container?.querySelector("time") ||
+          container?.parentElement?.querySelector("time");
+        const time = timeEl?.getAttribute("datetime") || timeEl?.textContent?.trim() || "";
 
-        if (bubbles.length === 0) continue;
+        // Sender from nearest <a> with an /in/ href (profile link)
+        const senderLink = container?.querySelector('a[href*="/in/"]');
+        const sender = senderLink?.textContent?.trim() || "them";
 
-        const senderEl =
-          group.querySelector("span.msg-s-message-group__profile-link") ||
-          group.querySelector("a.msg-s-message-group__link span") ||
-          group.querySelector("span.msg-s-event__author");
-
-        const timeEl =
-          group.querySelector("time.msg-s-message-group__timestamp") ||
-          group.querySelector("span.msg-s-message-group__timestamp");
-
-        const sender = senderEl?.textContent?.trim() || "them";
-        const time = timeEl?.textContent?.trim() || "";
-
-        bubbles.forEach((bubble) => {
-          const text = (bubble.textContent?.trim() || "").slice(0, 500);
-          if (text) items.push({ sender, text, time });
-        });
+        items.push({ sender, text, time });
+        if (items.length >= 20) break;
       }
 
       return items;

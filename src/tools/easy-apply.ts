@@ -79,9 +79,14 @@ async function captureScreenshot(page: Page, label: string): Promise<string> {
 }
 
 function getModalLocator(page: Page) {
+  // Prefer stable attribute selectors; artdeco-modal is LinkedIn's design system
+  // class and has remained stable across updates.
   return page.locator(
-    'div.jobs-easy-apply-modal, div.jobs-easy-apply-content, ' +
-    'div[data-test-modal-id="easy-apply-modal"], div.artdeco-modal:has(button[aria-label="Submit application"])'
+    'div[data-test-modal-id="easy-apply-modal"], ' +
+    'div[role="dialog"]:has(button[aria-label*="Easy Apply"]), ' +
+    'div[role="dialog"]:has(button[aria-label="Submit application"]), ' +
+    'div.artdeco-modal:has(button[aria-label="Submit application"]), ' +
+    'div.jobs-easy-apply-modal'
   ).first();
 }
 
@@ -302,13 +307,12 @@ async function startApplication(jobId: string): Promise<string> {
   const jobUrl = `https://www.linkedin.com/jobs/view/${jobId}/`;
 
   try {
-    await page.goto(jobUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.goto(jobUrl, { waitUntil: "load", timeout: 45000 });
+    await page.waitForTimeout(2000);
     ensureAuthenticated(page);
 
-    // Wait for the job page to load.
-    await page.waitForSelector(
-      'div.jobs-unified-top-card, div.job-view-layout, main',
-      { timeout: 15000 }
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() =>
+      page.waitForTimeout(3000)
     );
 
     // Find and click the Easy Apply button.

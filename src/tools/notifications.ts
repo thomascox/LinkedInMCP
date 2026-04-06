@@ -32,49 +32,47 @@ async function getNotifications(): Promise<string> {
 
   try {
     await page.goto("https://www.linkedin.com/notifications/", {
-      waitUntil: "domcontentloaded",
-      timeout: 30000,
+      waitUntil: "load",
+      timeout: 45000,
     });
-    ensureAuthenticated(page);
-
-    await page.waitForSelector(
-      "div.nt-card-list, ul[aria-label='Notifications'], main",
-      { timeout: 15000 }
-    );
     await page.waitForTimeout(2000);
+    ensureAuthenticated(page);
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() =>
+      page.waitForTimeout(3000)
+    );
 
     const notifications: Notification[] = await page.evaluate(() => {
       const items: Notification[] = [];
 
-      const cards = document.querySelectorAll(
-        "div.nt-card, " +
-        "li.nt-card, " +
-        "div[data-urn*='notification']"
-      );
+      // data-urn is stable for notification items
+      const cards = Array.from(
+        document.querySelectorAll("[data-urn]")
+      ).filter((el) => {
+        const urn = el.getAttribute("data-urn") || "";
+        return urn.includes("notification");
+      });
+
       const limit = Math.min(cards.length, 10);
 
       for (let i = 0; i < limit; i++) {
         const card = cards[i];
 
-        const actorEl =
-          card.querySelector("span.nt-card__actor-name") ||
-          card.querySelector("a.nt-card__actor-link span[aria-hidden='true']") ||
-          card.querySelector("span.t-bold");
+        // Actor: first profile link text
+        const actorLink = card.querySelector('a[href*="/in/"]');
+        const actor = actorLink?.textContent?.trim() || "";
 
-        const textEl =
-          card.querySelector("p.nt-card__text") ||
-          card.querySelector("div.nt-card__description") ||
-          card.querySelector("span.notification-item__text");
+        // Text: all visible p/span text joined
+        const textEls = Array.from(card.querySelectorAll("p, span"))
+          .filter((el) => (el as HTMLElement).offsetParent !== null && el.children.length === 0);
+        const text = textEls
+          .map((el) => el.textContent?.trim())
+          .filter((t): t is string => !!t && t.length > 2)
+          .join(" ")
+          .slice(0, 200);
 
-        const timeEl =
-          card.querySelector("time.nt-card__time-stamp") ||
-          card.querySelector("span.nt-card__time-stamp") ||
-          card.querySelector("time");
-
-        const actor = actorEl?.textContent?.trim() || "";
-        const text = (textEl?.textContent?.trim() || "").slice(0, 200);
-        const time = timeEl?.textContent?.trim() || "";
-        const cardClass = card.className || "";
+        const timeEl = card.querySelector("time");
+        const time = timeEl?.getAttribute("datetime") || timeEl?.textContent?.trim() || "";
+        const cardClass = "";
 
         const type = ((): "connection" | "job" | "reaction" | "comment" | "mention" | "birthday" | "work_anniversary" | "profile_view" | "post_share" | "unknown" => {
           const c = cardClass.toLowerCase();
@@ -115,30 +113,27 @@ async function getUnreadCount(): Promise<string> {
 
   try {
     await page.goto("https://www.linkedin.com/feed/", {
-      waitUntil: "domcontentloaded",
-      timeout: 30000,
+      waitUntil: "load",
+      timeout: 45000,
     });
+    await page.waitForTimeout(2000);
     ensureAuthenticated(page);
 
-    await page.waitForTimeout(2000);
-
     const counts = await page.evaluate(() => {
-      // Messaging unread badge — various possible selectors
-      const msgBadge =
-        document.querySelector(
-          'a[href*="/messaging/"] .notification-badge__count, ' +
-          'a[href*="/messaging/"] .nav-item__badge-count, ' +
-          'li[data-control-name="nav.messaging"] .notification-badge__count'
-        );
-      const unreadMessages = parseInt(msgBadge?.textContent?.trim() || "0", 10) || 0;
+      // LinkedIn nav aria-labels are confirmed stable (April 2026):
+      // "Messaging, N new notifications" and "Notifications, N new notifications"
+      function parseCountFromLabel(label: string | null): number {
+        if (!label) return 0;
+        const m = label.match(/(\d+)\s+new/);
+        return m ? parseInt(m[1], 10) : 0;
+      }
 
-      // Notifications unread badge
-      const notifBadge =
-        document.querySelector(
-          'a[href*="/notifications/"] .notification-badge__count, ' +
-          'a[href*="/notifications/"] .nav-item__badge-count'
-        );
-      const unreadNotifications = parseInt(notifBadge?.textContent?.trim() || "0", 10) || 0;
+      const msgEl = document.querySelector('a[aria-label*="Messaging"]') ||
+        document.querySelector('button[aria-label*="Messaging"]');
+      const notifEl = document.querySelector('a[aria-label*="Notifications"]');
+
+      const unreadMessages = parseCountFromLabel(msgEl?.getAttribute("aria-label") ?? null);
+      const unreadNotifications = parseCountFromLabel(notifEl?.getAttribute("aria-label") ?? null);
 
       return { unreadMessages, unreadNotifications };
     });

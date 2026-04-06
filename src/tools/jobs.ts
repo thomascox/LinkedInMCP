@@ -33,25 +33,20 @@ async function getJobDetails(jobId: string): Promise<string> {
   try {
     await page.goto(
       `https://www.linkedin.com/jobs/view/${jobId}/`,
-      { waitUntil: "domcontentloaded", timeout: 30000 }
+      { waitUntil: "load", timeout: 45000 }
     );
+    await page.waitForTimeout(2000);
     ensureAuthenticated(page);
 
-    await page.waitForSelector(
-      "div.jobs-unified-top-card, div.job-view-layout, main",
-      { timeout: 15000 }
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() =>
+      page.waitForTimeout(3000)
     );
-    // Wait for job title to hydrate before scraping
-    await page.waitForSelector(
-      "h1, div.jobs-description-content__text",
-      { timeout: 10000 }
-    ).catch(() => {});
 
     // Expand full description if truncated
     const seeMoreBtn = page.locator(
-      'button.jobs-description__footer-button, ' +
       'button[aria-label="Click to see more description"], ' +
-      'footer.jobs-description__details button'
+      'button[aria-label*="see more"], ' +
+      'button:has-text("See more")'
     ).first();
 
     if (await seeMoreBtn.isVisible().catch(() => false)) {
@@ -60,59 +55,41 @@ async function getJobDetails(jobId: string): Promise<string> {
     }
 
     const details: JobDetails = await page.evaluate(() => {
-      // Scope to main to avoid nav/sidebar noise
-      const main = document.querySelector("main") || document;
+      const main = (document.querySelector("main") ?? document) as Element;
 
-      const title =
-        main.querySelector(
-          "h1.job-details-jobs-unified-top-card__job-title, " +
-          "h1.t-24.t-bold.inline"
-        )?.textContent?.trim() || "";
+      // Title: h1 is present on job listing pages
+      const titleEl = main.querySelector("h1");
+      const title = titleEl?.textContent?.trim() ?? document.title.split(" - ")[0].trim() ?? "";
 
-      const company =
-        main.querySelector(
-          "a.job-details-jobs-unified-top-card__company-name, " +
-          "span.jobs-unified-top-card__company-name a, " +
-          "div.job-details-jobs-unified-top-card__company-name"
-        )?.textContent?.trim() || "";
+      // Company: stable link pattern
+      const companyLink = main.querySelector('a[href*="/company/"]');
+      const company = companyLink?.textContent?.trim() ?? "";
 
-      // Location and workplace type are often in the same element or adjacent spans
+      // Metadata spans (location, workplace type)
       const metaItems = Array.from(
-        main.querySelectorAll(
-          "span.jobs-unified-top-card__bullet, " +
-          "span.job-details-jobs-unified-top-card__bullet, " +
-          "li.job-details-jobs-unified-top-card__job-insight span[aria-hidden='true']"
-        )
-      ).map((el) => el.textContent?.trim() || "").filter(Boolean);
+        main.querySelectorAll('li span[aria-hidden="true"], li span:not([aria-hidden])')
+      )
+        .map((el) => el.textContent?.trim() ?? "")
+        .filter((t) => t.length > 1 && t !== "·");
 
-      const location = metaItems[0] || "";
-      const workplaceType = metaItems[1] || "";
+      const location = metaItems[0] ?? "";
+      const workplaceType = metaItems[1] ?? "";
 
-      const postedDate =
-        main.querySelector(
-          "span.jobs-unified-top-card__posted-date, " +
-          "span.job-details-jobs-unified-top-card__posted-date"
-        )?.textContent?.trim() || "";
-
-      const applicantCount =
-        main.querySelector(
-          "span.jobs-unified-top-card__applicant-count, " +
-          "figcaption.jobs-unified-top-card__applicant-count, " +
-          "span.jobs-unified-top-card__bullet ~ span"
-        )?.textContent?.trim() || "";
-
-      const easyApplyBtn = main.querySelector(
-        'button[aria-label*="Easy Apply"], button.jobs-apply-button'
+      // Posted date and applicant count via text pattern matching
+      const allSpanTexts = Array.from(main.querySelectorAll("span")).map(
+        (el) => el.textContent?.trim() ?? ""
       );
-      const easyApply = !!easyApplyBtn;
+      const postedDate = allSpanTexts.find((t) => /\d+\s*(hour|day|week|month|year)s?\s*ago/i.test(t)) ?? "";
+      const applicantCount =
+        allSpanTexts.find((t) => /applicant|people applied/i.test(t) && /\d/.test(t)) ?? "";
 
-      // Description — innerText for clean plain text, cap at 2000 chars
-      const descEl = main.querySelector(
-        "div.jobs-description-content__text, " +
-        "div#job-details, " +
-        "article.jobs-description__container"
-      ) as HTMLElement | null;
-      const description = (descEl?.innerText || "").trim().slice(0, 2000);
+      // Easy Apply button — aria-label is stable
+      const easyApply = !!main.querySelector('button[aria-label*="Easy Apply"]');
+
+      // Description — div#job-details is a persistent ID on LinkedIn job pages
+      const descEl = (main.querySelector("div#job-details") ??
+        main.querySelector("article")) as HTMLElement | null;
+      const description = (descEl?.innerText ?? "").trim().slice(0, 2000);
 
       return { title, company, location, workplaceType, postedDate, applicantCount, easyApply, description };
     });
@@ -134,15 +111,14 @@ async function saveJob(jobId: string): Promise<string> {
   try {
     await page.goto(
       `https://www.linkedin.com/jobs/view/${jobId}/`,
-      { waitUntil: "domcontentloaded", timeout: 30000 }
+      { waitUntil: "load", timeout: 45000 }
     );
+    await page.waitForTimeout(2000);
     ensureAuthenticated(page);
 
-    await page.waitForSelector(
-      "div.jobs-unified-top-card, main",
-      { timeout: 15000 }
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() =>
+      page.waitForTimeout(3000)
     );
-    await page.waitForTimeout(1000);
 
     const saveButton = page.locator(
       'button[aria-label*="Save job"], button[aria-label*="save job"], button.jobs-save-button'
@@ -178,62 +154,42 @@ async function getSavedJobs(): Promise<string> {
   try {
     await page.goto(
       "https://www.linkedin.com/my-items/saved-jobs/",
-      { waitUntil: "domcontentloaded", timeout: 30000 }
-    );
-    ensureAuthenticated(page);
-
-    await page.waitForSelector(
-      "ul.reusable-search__entity-result-list, " +
-      "div.scaffold-finite-scroll__content, " +
-      "main",
-      { timeout: 15000 }
+      { waitUntil: "load", timeout: 45000 }
     );
     await page.waitForTimeout(2000);
+    ensureAuthenticated(page);
+
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() =>
+      page.waitForTimeout(3000)
+    );
 
     const jobs: SavedJobCard[] = await page.evaluate(() => {
       const items: SavedJobCard[] = [];
 
-      const cards = document.querySelectorAll(
-        "li.reusable-search__result-container, " +
-        "li.scaffold-finite-scroll__item, " +
-        "li.job-card-container"
-      );
-      const limit = Math.min(cards.length, 20);
+      // Find all job view links — stable URL pattern regardless of class names
+      const links = Array.from(
+        document.querySelectorAll('a[href*="/jobs/view/"]')
+      ) as HTMLAnchorElement[];
+      const seen = new Set<string>();
 
-      for (let i = 0; i < limit; i++) {
-        const card = cards[i];
+      for (const link of links) {
+        const jobId = link.href.match(/\/jobs\/view\/(\d+)/)?.[1] ?? "";
+        if (!jobId || seen.has(jobId)) continue;
+        seen.add(jobId);
 
-        const linkEl = card.querySelector(
-          "a[href*='/jobs/view/']"
-        ) as HTMLAnchorElement | null;
-        const jobId = linkEl?.href?.match(/\/jobs\/view\/(\d+)/)?.[1] || "";
+        const container = link.closest("li") ?? link.parentElement;
+        const spans = Array.from(container?.querySelectorAll("span") ?? [])
+          .filter((el) => el.getAttribute("aria-hidden") !== "true")
+          .map((el) => el.textContent?.trim() ?? "")
+          .filter((t) => t.length > 1);
 
-        const titleEl =
-          card.querySelector("a.job-card-list__title") ||
-          card.querySelector("a.job-card-container__link strong") ||
-          card.querySelector("span.entity-result__title-text a span[aria-hidden='true']");
+        const title = link.textContent?.trim() ?? spans[0] ?? "";
+        const company = spans[1] ?? "";
+        const location = spans[2] ?? "";
+        const easyApply = (container?.textContent?.toLowerCase() ?? "").includes("easy apply");
 
-        const companyEl =
-          card.querySelector("span.job-card-container__primary-description") ||
-          card.querySelector("a.job-card-container__company-name") ||
-          card.querySelector("div.artdeco-entity-lockup__subtitle span");
-
-        const locationEl =
-          card.querySelector("li.job-card-container__metadata-item") ||
-          card.querySelector("div.artdeco-entity-lockup__caption span");
-
-        const easyApplyEl =
-          card.querySelector("li.job-card-container__apply-method") ||
-          card.querySelector("span:has-text('Easy Apply')");
-
-        const title = titleEl?.textContent?.trim() || "";
-        const company = companyEl?.textContent?.trim() || "";
-        const location = locationEl?.textContent?.trim() || "";
-        const easyApply = (easyApplyEl?.textContent?.toLowerCase() || "").includes("easy apply");
-
-        if (title || jobId) {
-          items.push({ jobId, title, company, location, easyApply });
-        }
+        if (title || jobId) items.push({ jobId, title, company, location, easyApply });
+        if (items.length >= 20) break;
       }
 
       return items;

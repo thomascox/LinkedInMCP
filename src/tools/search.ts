@@ -99,52 +99,45 @@ async function scrollToLoadAll(page: Page, maxScrolls: number = 5): Promise<void
 // -- Scrapers --------------------------------------------------------------
 
 async function scrapePeopleResults(page: Page): Promise<PersonResult[]> {
-  await page.waitForSelector(
-    'div.search-results-container, ul.reusable-search__entity-result-list',
-    { timeout: 15000 }
+  await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() =>
+    page.waitForTimeout(3000)
   );
 
   await scrollToLoadAll(page);
 
   const results = await page.evaluate(() => {
     const items: { name: string; headline: string; profileUrl: string }[] = [];
+    const seen = new Set<string>();
 
-    const cards = document.querySelectorAll(
-      'li.reusable-search__result-container, div.entity-result'
-    );
+    // Stable: profile links always contain /in/
+    const links = Array.from(
+      document.querySelectorAll('a[href*="/in/"]')
+    ) as HTMLAnchorElement[];
 
-    cards.forEach((card) => {
-      const linkEl = card.querySelector(
-        'a.app-aware-link[href*="/in/"], span.entity-result__title-text a'
-      ) as HTMLAnchorElement | null;
+    for (const link of links) {
+      let profileUrl = link.href;
+      try {
+        const u = new URL(profileUrl);
+        profileUrl = `${u.origin}${u.pathname}`;
+      } catch { /**/ }
 
-      const nameEl =
-        card.querySelector('span.entity-result__title-text a span[aria-hidden="true"]') ||
-        card.querySelector('span.entity-result__title-text span[dir="ltr"]') ||
-        linkEl;
+      if (seen.has(profileUrl) || !profileUrl.includes("/in/")) continue;
+      seen.add(profileUrl);
 
-      const headlineEl =
-        card.querySelector('div.entity-result__primary-subtitle') ||
-        card.querySelector('p.entity-result__summary');
+      // Name: aria-hidden span inside the link (LinkedIn pattern)
+      const name =
+        link.querySelector('span[aria-hidden="true"]')?.textContent?.trim() ||
+        link.textContent?.trim() || "";
 
-      const name = nameEl?.textContent?.trim() || "";
-      const headline = headlineEl?.textContent?.trim() || "";
-      let profileUrl = linkEl?.href || "";
+      // Headline: look in the li container for a p sibling
+      const container = link.closest("li") || link.parentElement;
+      const ps = Array.from(container?.querySelectorAll("p") || [])
+        .map((p) => p.textContent?.trim())
+        .filter((t): t is string => !!t && t !== name && t.length > 2);
+      const headline = ps[0] || "";
 
-      // Clean tracking params from profile URL.
-      if (profileUrl) {
-        try {
-          const url = new URL(profileUrl);
-          profileUrl = `${url.origin}${url.pathname}`;
-        } catch {
-          // keep as-is
-        }
-      }
-
-      if (name) {
-        items.push({ name, headline, profileUrl });
-      }
-    });
+      if (name) items.push({ name, headline, profileUrl });
+    }
 
     return items;
   });
@@ -153,9 +146,8 @@ async function scrapePeopleResults(page: Page): Promise<PersonResult[]> {
 }
 
 async function scrapeJobResults(page: Page): Promise<JobResult[]> {
-  await page.waitForSelector(
-    'ul.jobs-search__results-list, div.jobs-search-results-list, ul.scaffold-layout__list-container',
-    { timeout: 15000 }
+  await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() =>
+    page.waitForTimeout(3000)
   );
 
   await scrollToLoadAll(page);
@@ -236,8 +228,8 @@ export async function handleSearchLinkedin(args: {
   const { browser, page } = await launchWithSession();
 
   try {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-
+    await page.goto(url, { waitUntil: "load", timeout: 45000 });
+    await page.waitForTimeout(2000);
     ensureAuthenticated(page);
 
     let results: SearchResult[];

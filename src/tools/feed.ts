@@ -27,93 +27,53 @@ async function getFeed(): Promise<string> {
 
   try {
     await page.goto("https://www.linkedin.com/feed/", {
-      waitUntil: "domcontentloaded",
-      timeout: 30000,
+      waitUntil: "load",
+      timeout: 45000,
     });
+    await page.waitForTimeout(2000);
     ensureAuthenticated(page);
-
-    await page.waitForSelector(
-      "div.core-rail, div[data-id='feed-container'], main",
-      { timeout: 15000 }
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() =>
+      page.waitForTimeout(3000)
     );
-    // Wait for at least one post card to render (feed is JS-hydrated after skeleton)
-    await page.waitForSelector(
-      "div.feed-shared-update-v2, div[data-urn*='activity']",
-      { timeout: 10000 }
-    ).catch(() => {});
 
     const posts: FeedPost[] = await page.evaluate(() => {
       const items: FeedPost[] = [];
 
-      const cards = document.querySelectorAll(
-        "div.feed-shared-update-v2, " +
-        "div[data-urn*='ugcPost'], " +
-        "div[data-urn*='activity']"
-      );
+      // data-urn is a stable LinkedIn attribute identifying feed items
+      const cards = Array.from(
+        document.querySelectorAll("[data-urn]")
+      ).filter((el) => {
+        const urn = el.getAttribute("data-urn") || "";
+        return urn.includes("activity") || urn.includes("ugcPost") || urn.includes("share");
+      });
 
       for (let i = 0; i < cards.length && items.length < 10; i++) {
         const card = cards[i];
-
-        // Skip promoted/sponsored posts
-        const promoEl =
-          card.querySelector("span.feed-shared-actor__sub-description") ||
-          card.querySelector("span.update-components-actor__sub-description");
-        const promoText = (promoEl?.textContent || "").toLowerCase();
-        if (promoText.includes("promoted") || promoText.includes("sponsored")) {
-          continue;
-        }
-
-        const authorEl =
-          card.querySelector(
-            "span.feed-shared-actor__name span[aria-hidden='true']"
-          ) ||
-          card.querySelector(
-            "a.update-components-actor__name span[aria-hidden='true']"
-          );
-
-        const headlineEl =
-          card.querySelector(
-            "span.feed-shared-actor__description span[aria-hidden='true']"
-          ) ||
-          card.querySelector(
-            "span.update-components-actor__description span[aria-hidden='true']"
-          );
-
-        const textEl =
-          card.querySelector(
-            "div.feed-shared-update-v2__description span[dir='ltr']"
-          ) ||
-          card.querySelector(
-            "div.update-components-text span[dir='ltr']"
-          ) ||
-          card.querySelector("div.feed-shared-text-view span[dir='ltr']");
-
-        const likesEl =
-          card.querySelector(
-            "span.social-details-social-counts__reactions-count"
-          ) ||
-          card.querySelector("button[aria-label*='reaction'] span");
-
-        const commentsEl =
-          card.querySelector(
-            "li.social-details-social-counts__comments a"
-          ) ||
-          card.querySelector("button[aria-label*='comment'] span");
-
-        // Build post URL from data-urn attribute
         const urn = card.getAttribute("data-urn") || "";
+
+        // Skip promoted posts — they contain "Promoted" text
+        if (card.textContent?.includes("Promoted")) continue;
+
+        // Author: first profile link's aria-hidden span
+        const authorLink = card.querySelector('a[href*="/in/"]');
+        const author =
+          authorLink?.querySelector('span[aria-hidden="true"]')?.textContent?.trim() ||
+          authorLink?.textContent?.trim() || "";
+
+        // Post text: look for span[dir='ltr'] which LinkedIn uses for post content
+        const textEl = card.querySelector("span[dir='ltr']");
+        const text = (textEl?.textContent?.trim() || "").slice(0, 300);
+
+        // Engagement: button aria-labels contain counts like "47 reactions"
+        const reactionBtn = card.querySelector('button[aria-label*="reaction"]');
+        const likes = reactionBtn?.getAttribute("aria-label")?.match(/\d+/)?.[0] || "0";
+
         const postUrl = urn
           ? `https://www.linkedin.com/feed/update/${urn}/`
           : "";
 
-        const author = authorEl?.textContent?.trim() || "";
-        const authorHeadline = headlineEl?.textContent?.trim() || "";
-        const text = (textEl?.textContent?.trim() || "").slice(0, 300);
-        const likes = likesEl?.textContent?.trim() || "0";
-        const comments = commentsEl?.textContent?.trim() || "0";
-
         if (author || text) {
-          items.push({ author, authorHeadline, text, likes, comments, postUrl });
+          items.push({ author, authorHeadline: "", text, likes, comments: "0", postUrl });
         }
       }
 
@@ -137,40 +97,30 @@ async function createPost(text: string, visibility: PostVisibility): Promise<str
 
   try {
     await page.goto("https://www.linkedin.com/feed/", {
-      waitUntil: "domcontentloaded",
-      timeout: 30000,
+      waitUntil: "load",
+      timeout: 45000,
     });
+    await page.waitForTimeout(2000);
     ensureAuthenticated(page);
-
-    await page.waitForSelector(
-      "div.share-box-feed-entry, main",
-      { timeout: 15000 }
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() =>
+      page.waitForTimeout(3000)
     );
 
-    // Click "Start a post"
-    const startPostBtn = page.locator(
-      [
-        "button.share-box-feed-entry__trigger",
-        "button.share-box-feed-entry__open",
-        'div[role="button"]:has-text("Start a post")',
-        'button:has-text("Start a post")',
-      ].join(", ")
-    ).first();
+    // Click "Start a post" — text-based selector is resilient to class changes
+    const startPostBtn = page.getByRole("button", { name: /start a post/i }).first();
 
     await startPostBtn.waitFor({ state: "visible", timeout: 10000 });
     await startPostBtn.click();
 
     // Wait for composer dialog
-    const composer = page.locator(
-      'div.share-creation-state__main, div[role="dialog"]:has(div[contenteditable="true"])'
-    ).first();
+    const composer = page.locator('[role="dialog"]:has([contenteditable="true"])').first();
     await composer.waitFor({ state: "visible", timeout: 10000 });
     await page.waitForTimeout(1000);
 
     // Type content
-    const textArea = composer.locator(
-      'div[contenteditable="true"][role="textbox"], div[contenteditable="true"]'
-    ).first();
+    const textArea = composer
+      .locator('[contenteditable="true"][role="textbox"], [contenteditable="true"]')
+      .first();
     await textArea.waitFor({ state: "visible", timeout: 5000 });
     await textArea.click();
     await textArea.pressSequentially(text, { delay: randomDelay() });
@@ -182,13 +132,7 @@ async function createPost(text: string, visibility: PostVisibility): Promise<str
     }
 
     // Click Post button
-    const postButton = composer.locator(
-      [
-        "button.share-actions__primary-action",
-        'button[class*="share-actions__primary"]',
-        'button:has-text("Post")',
-      ].join(", ")
-    ).first();
+    const postButton = composer.getByRole("button", { name: /^post$/i }).first();
 
     await postButton.waitFor({ state: "visible", timeout: 5000 });
     await postButton.click();
@@ -252,14 +196,12 @@ async function reactToPost(postUrl: string, reaction: ReactionType): Promise<str
   const { browser, page } = await launchWithSession();
 
   try {
-    await page.goto(postUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.goto(postUrl, { waitUntil: "load", timeout: 45000 });
+    await page.waitForTimeout(2000);
     ensureAuthenticated(page);
-
-    await page.waitForSelector(
-      "div.feed-shared-update-v2, main",
-      { timeout: 15000 }
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() =>
+      page.waitForTimeout(3000)
     );
-    await page.waitForTimeout(1500);
 
     // Find the Like/React button
     const likeButton = page.locator(

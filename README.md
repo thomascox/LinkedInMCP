@@ -124,7 +124,7 @@ Manage LinkedIn authentication sessions.
 | `action` | `"capture"` \| `"verify"` | Yes | The action to perform |
 
 - **`capture`** — Opens a headed browser, navigates to login, waits for you to log in, saves session cookies.
-- **`verify`** — Headless check that the saved session is still valid (loads feed, checks for avatar).
+- **`verify`** — Headless check that the saved session is still valid (loads feed, checks for nav/page content).
 
 Sessions expire after ~24-48 hours. If any tool returns a session-expired error, re-run with `capture`.
 
@@ -160,7 +160,7 @@ Search LinkedIn for people or jobs. Returns compact JSON results.
 
 #### `view_profile`
 
-View any LinkedIn profile by URL. Returns structured JSON with name, headline, location, connection degree, about, experience (top 5), education (top 3), and skills (top 10).
+View any LinkedIn profile by URL. Returns structured JSON with name, headline, location, about, experience entries, education entries, and skills (up to 25).
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
@@ -176,7 +176,7 @@ Read or update your own LinkedIn profile sections.
 | `section` | `"headline"` \| `"about"` | For `update_section` | Section to edit |
 | `text` | `string` | For `update_section` | New content |
 
-- **`get_profile`** — Returns your headline, about, and experience as compact JSON.
+- **`get_profile`** — Returns your headline, location, about, experience, education, and skills as compact JSON.
 - **`update_section`** — Opens edit modal, clears text, types new content with human-like delay, saves, and waits for the confirmation toast.
 
 ---

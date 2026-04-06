@@ -66,7 +66,7 @@ async function captureSession(): Promise<string> {
 }
 
 async function verifySession(): Promise<string> {
-  if (!fs.existsSync(config.browser.storageStatePath)) {
+  if (!fs.existsSync(config.browser.userDataDir)) {
     throw new Error(
       "No saved session found. Run manage_auth_session with action 'capture' first."
     );
@@ -76,51 +76,63 @@ async function verifySession(): Promise<string> {
 
   await rateLimit();
 
-  const browser = await chromium.launch({
-    headless: true,
-    channel: "chromium",
-    args: [
-      "--disable-blink-features=AutomationControlled",
-      "--no-first-run",
-      "--no-default-browser-check",
-    ],
-  });
-
-  const context = await browser.newContext({
-    storageState: config.browser.storageStatePath,
-    locale: "en-US",
-  });
+  // Use the same launchPersistentContext path that all tools use, so verify
+  // actually tests the real session rather than a cookies-only fresh context.
+  const context = await chromium.launchPersistentContext(
+    config.browser.userDataDir,
+    {
+      headless: true,
+      channel: "chromium",
+      args: [
+        "--disable-blink-features=AutomationControlled",
+        "--disable-features=IsolateOrigins,site-per-process",
+        "--no-first-run",
+        "--no-default-browser-check",
+      ],
+      viewport: { width: 1280, height: 800 },
+      locale: "en-US",
+      timezoneId: "America/New_York",
+    }
+  );
 
   await applyStealthScripts(context);
 
   const page = await context.newPage();
 
-  await page.goto(FEED_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await page.goto(FEED_URL, { waitUntil: "load", timeout: 45000 });
 
-  // LinkedIn redirects to /login if the session is invalid.
-  if (page.url().includes("/login")) {
-    await browser.close();
-    return "Session is INVALID — LinkedIn redirected to the login page.";
+  // Allow JS to finish any client-side redirects before checking URL.
+  await page.waitForTimeout(2000);
+
+  const url = page.url();
+  if (
+    url.includes("/login") ||
+    url.includes("/authwall") ||
+    url.includes("/checkpoint/")
+  ) {
+    await context.close();
+    return `Session is INVALID — LinkedIn redirected to ${url}. Re-run 'capture'.`;
   }
 
-  // Look for the user's nav avatar as a positive signal.
-  const avatar = page.locator(
-    'img.global-nav__me-photo, img[alt="Photo of"], button.global-nav__primary-link--me-btn img'
-  );
-
+  // Confirm we're actually on the feed by checking for any h1 or nav element.
+  let confirmed = false;
   try {
-    await avatar.first().waitFor({ state: "visible", timeout: 15000 });
+    await page.waitForSelector('h1, nav', { timeout: 10000 });
+    confirmed = true;
   } catch {
-    await browser.close();
-    return (
-      "Session may be invalid — reached the feed but could not find the " +
-      "user avatar. Consider re-capturing."
-    );
+    // Page loaded but no recognisable content — session may be degraded.
   }
 
-  await browser.close();
-  logger.info("Session verified — avatar found on feed page.");
-  return "Session is VALID — LinkedIn feed loaded and user avatar detected.";
+  await context.close();
+
+  if (confirmed) {
+    logger.info("Session verified — feed loaded with valid session.");
+    return `Session is VALID — LinkedIn feed loaded at ${url}.`;
+  }
+  return (
+    "Session may be degraded — reached the feed URL but page content did not " +
+    "render. Consider re-capturing."
+  );
 }
 
 export async function handleManageAuthSession(args: {

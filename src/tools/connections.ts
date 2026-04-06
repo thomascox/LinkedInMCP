@@ -31,14 +31,13 @@ async function sendConnectionRequest(
   const { browser, page } = await launchWithSession();
 
   try {
-    await page.goto(profileUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.goto(profileUrl, { waitUntil: "load", timeout: 45000 });
+    await page.waitForTimeout(2000);
     ensureAuthenticated(page);
-
-    await page.waitForSelector(
-      "div.pv-top-card, section.pv-top-card, main.scaffold-layout__main",
-      { timeout: 15000 }
+    await page.waitForFunction(
+      () => document.title.includes("| LinkedIn") && document.title.length > 15,
+      { timeout: 30000 }
     );
-    await page.waitForTimeout(1500);
 
     // Check if already connected (1st degree badge)
     const firstDegree = page.locator(
@@ -153,50 +152,41 @@ async function getConnections(search?: string): Promise<string> {
       url += `?search=${encodeURIComponent(search)}`;
     }
 
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-    ensureAuthenticated(page);
-
-    await page.waitForSelector(
-      "ul.mn-connections__list, div.scaffold-finite-scroll__content",
-      { timeout: 15000 }
-    );
+    await page.goto(url, { waitUntil: "load", timeout: 45000 });
     await page.waitForTimeout(2000);
+    ensureAuthenticated(page);
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() =>
+      page.waitForTimeout(3000)
+    );
 
     const connections: ConnectionCard[] = await page.evaluate(() => {
       const items: ConnectionCard[] = [];
-      const cards = document.querySelectorAll(
-        "li.mn-connection-card, li.scaffold-finite-scroll__item"
-      );
-      const limit = Math.min(cards.length, 20);
+      // Stable: profile links are always /in/ paths; group by li parent
+      const links = Array.from(
+        document.querySelectorAll('a[href*="/in/"]')
+      ) as HTMLAnchorElement[];
 
-      for (let i = 0; i < limit; i++) {
-        const card = cards[i];
-        const linkEl = card.querySelector(
-          "a.mn-connection-card__link, a[href*='/in/']"
-        ) as HTMLAnchorElement | null;
-        const nameEl =
-          card.querySelector("span.mn-connection-card__name") ||
-          card.querySelector("span.t-16.t-black.t-bold");
-        const headlineEl =
-          card.querySelector("span.mn-connection-card__occupation") ||
-          card.querySelector("span.t-14.t-black--light");
+      const seen = new Set<string>();
+      for (const link of links) {
+        let href = link.href;
+        try { href = new URL(href).origin + new URL(href).pathname; } catch { /**/ }
+        if (seen.has(href) || !href.includes("/in/")) continue;
+        seen.add(href);
 
-        const name = nameEl?.textContent?.trim() || "";
-        const headline = headlineEl?.textContent?.trim() || "";
-        let profileUrl = linkEl?.href || "";
+        // Name: first non-empty text-only descendant of the link
+        const nameSpan = link.querySelector("span[aria-hidden='true']") || link;
+        const name = nameSpan.textContent?.trim() || "";
 
-        if (profileUrl) {
-          try {
-            const u = new URL(profileUrl);
-            profileUrl = `${u.origin}${u.pathname}`;
-          } catch {
-            // keep as-is
-          }
-        }
+        // Headline: look in the same li/card container, a sibling p element
+        const container = link.closest("li") || link.parentElement;
+        const ps = Array.from(container?.querySelectorAll("p") || [])
+          .map((p) => p.textContent?.trim())
+          .filter((t): t is string => !!t && t.length > 0 && t !== name);
+        const headline = ps[0] || "";
 
-        if (name) items.push({ name, headline, profileUrl });
+        if (name) items.push({ name, headline, profileUrl: href });
+        if (items.length >= 20) break;
       }
-
       return items;
     });
 
@@ -220,57 +210,37 @@ async function manageConnectionRequests(
   try {
     await page.goto(
       "https://www.linkedin.com/mynetwork/invitation-manager/",
-      { waitUntil: "domcontentloaded", timeout: 30000 }
-    );
-    ensureAuthenticated(page);
-
-    await page.waitForSelector(
-      "section.mn-invitations-tabs-container, ul.invitation-list, main",
-      { timeout: 15000 }
+      { waitUntil: "load", timeout: 45000 }
     );
     await page.waitForTimeout(2000);
+    ensureAuthenticated(page);
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() =>
+      page.waitForTimeout(3000)
+    );
 
     if (action === "list_received") {
       const requests: InvitationCard[] = await page.evaluate(() => {
         const items: InvitationCard[] = [];
-        const cards = document.querySelectorAll(
-          "li.invitation-card, li[class*='invitation']"
-        );
-        const limit = Math.min(cards.length, 20);
-
-        for (let i = 0; i < limit; i++) {
-          const card = cards[i];
-          const linkEl = card.querySelector(
-            "a[href*='/in/']"
-          ) as HTMLAnchorElement | null;
-          const nameEl =
-            card.querySelector("span.invitation-card__title") ||
-            card.querySelector("strong.invitation-card__title") ||
-            card.querySelector("span.t-16.t-bold");
-          const headlineEl =
-            card.querySelector("p.invitation-card__subtitle") ||
-            card.querySelector("span.t-14.t-black--light");
-          const mutualEl =
-            card.querySelector("span.invitation-card__caption") ||
-            card.querySelector("span.member-insights__count");
-
-          const name = nameEl?.textContent?.trim() || "";
-          const headline = headlineEl?.textContent?.trim() || "";
-          const mutualConnections = mutualEl?.textContent?.trim() || "";
-          let url = linkEl?.href || "";
-
-          if (url) {
-            try {
-              const u = new URL(url);
-              url = `${u.origin}${u.pathname}`;
-            } catch {
-              // keep as-is
-            }
-          }
-
-          if (name) items.push({ name, headline, profileUrl: url, mutualConnections });
+        // Stable: find profile links, then extract card context
+        const links = Array.from(
+          document.querySelectorAll('a[href*="/in/"]')
+        ) as HTMLAnchorElement[];
+        const seen = new Set<string>();
+        for (const link of links) {
+          let href = link.href;
+          try { href = new URL(href).origin + new URL(href).pathname; } catch { /**/ }
+          if (seen.has(href)) continue;
+          seen.add(href);
+          const container = link.closest("li") || link.parentElement;
+          const ps = Array.from(container?.querySelectorAll("p, span") || [])
+            .map((el) => el.textContent?.trim())
+            .filter((t): t is string => !!t && t.length > 2);
+          const name = ps[0] || link.textContent?.trim() || "";
+          const headline = ps[1] || "";
+          const mutualConnections = ps.find((t) => /mutual|connection/i.test(t)) || "";
+          if (name) items.push({ name, headline, profileUrl: href, mutualConnections });
+          if (items.length >= 20) break;
         }
-
         return items;
       });
 
@@ -283,36 +253,38 @@ async function manageConnectionRequests(
       throw new Error("profile_url is required for accept and decline actions.");
     }
 
-    // Find the card index in one evaluate() call instead of N Playwright RPC calls
+    // Find the li containing the target profile link, then click its action button
     const targetPath = profileUrl.split("?")[0].replace(/\/$/, "");
-    const cardIndex = await page.evaluate((targetPath: string) => {
-      const cards = document.querySelectorAll("li.invitation-card, li[class*='invitation']");
-      for (let i = 0; i < cards.length; i++) {
-        const link = cards[i].querySelector("a[href*='/in/']") as HTMLAnchorElement | null;
-        const hrefPath = (link?.href || "").split("?")[0].replace(/\/$/, "");
-        if (hrefPath && (hrefPath.endsWith(targetPath) || targetPath.endsWith(hrefPath))) {
-          return i;
+    const found = await page.evaluate((targetPath: string) => {
+      const links = Array.from(
+        document.querySelectorAll('a[href*="/in/"]')
+      ) as HTMLAnchorElement[];
+      for (const link of links) {
+        const hrefPath = (link.href || "").split("?")[0].replace(/\/$/, "");
+        if (hrefPath.endsWith(targetPath) || targetPath.endsWith(hrefPath)) {
+          const li = link.closest("li");
+          return li ? Array.from(document.querySelectorAll("li")).indexOf(li as HTMLLIElement) : -1;
         }
       }
       return -1;
     }, targetPath);
 
-    if (cardIndex === -1) {
+    if (found === -1) {
       return compactJson({
         status: "not_found",
         message: "No pending invitation found from this profile.",
       });
     }
 
-    const card = page.locator("li.invitation-card, li[class*='invitation']").nth(cardIndex);
+    const card = page.locator("li").nth(found);
 
     if (action === "accept") {
-      const acceptBtn = card.locator('button:has-text("Accept")').first();
+      const acceptBtn = card.getByRole("button", { name: /accept/i }).first();
       await acceptBtn.waitFor({ state: "visible", timeout: 5000 });
       await acceptBtn.click();
     } else {
       const ignoreBtn = card
-        .locator('button:has-text("Ignore"), button[aria-label*="Ignore"]')
+        .getByRole("button", { name: /ignore/i })
         .first();
       await ignoreBtn.waitFor({ state: "visible", timeout: 5000 });
       await ignoreBtn.click();

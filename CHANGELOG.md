@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.2] - 2026-04-05
+
+### Fixed
+
+- **LinkedIn April 2026 DOM compatibility** — LinkedIn hashed all CSS class names; every selector that referenced a class name (`.pv-top-card`, `.jobs-unified-top-card`, `.text-heading-xlarge`, etc.) was silently returning empty results or timing out. All selectors across all 9 tool files have been replaced with stable alternatives: `data-urn`, `aria-label`, `href` patterns, `id` attributes, element type + text content, and ARIA roles.
+- **`profile.ts` — `view_profile` / `get_profile` returning empty About/Experience/Education/Skills** — root cause was two-fold: (1) LinkedIn lazy-loads profile sections below the fold and the scraper never scrolled; (2) the old code used class-based section selectors that no longer exist. Fixed by:
+  - Adding `scrollToLoadSections()` which scrolls `main#workspace` (LinkedIn's custom overflow container — `window.scrollTo` has no effect) in 5 incremental steps to trigger lazy loading
+  - Replacing all class-based selectors with a `findSection(keyword)` helper that locates sections by their `<h2>` text content — stable against class name hashing
+  - `ProfileData` now returns `about` (string), `experience[]`, `education[]`, and `skills[]`
+- **`profile.ts` — `update_section headline` failing** — LinkedIn replaced the edit modal with a full-page editor at `/in/me/edit/intro/`. Rewrote `updateHeadline` to navigate there directly and target the single `[contenteditable]` div.
+- **`auth.ts` — `verify` testing wrong code path** — was using `chromium.launch + newContext({storageState})` (cookies only) while all tools use `launchPersistentContext`. Fixed to use the same persistent context path, so verify now accurately tests the real session.
+- **`jobs.ts` — all three handlers** — replaced `waitUntil: "domcontentloaded"` with `"load"`, added 2s delay before auth check, replaced `waitForSelector` with `waitForLoadState` fallback, and rewrote `getJobDetails` scraping to use `h1` (title), `a[href*="/company/"]` (company), `div#job-details` (description). `getSavedJobs` now uses `a[href*="/jobs/view/"]` link-based extraction.
+- **`easy-apply.ts`** — `waitUntil: "domcontentloaded"` → `"load"`, added auth timing fix, improved `getModalLocator` with `role="dialog"` fallbacks alongside class selectors.
+- **`connections.ts`, `feed.ts`, `messaging.ts`, `notifications.ts`, `search.ts`** — all `waitForSelector` calls with hashed class names replaced with `waitForLoadState("networkidle").catch(fallback)`; all `waitUntil` changed to `"load"` with 45s timeouts; 2s auth-check delay added throughout.
+
 ## [0.7.1] - 2026-04-05
 
 ### Changed
