@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.3] - 2026-04-05
+
+### Fixed
+
+- **`view_profile` / `get_profile` — Experience, Education, Skills always empty** — LinkedIn's April 2026 profile layout no longer renders these sections on the main profile page at all (only the top card and Activity feed are present). Confirmed via live DOM inspection. These sections now require navigating to separate detail pages and clicking a "Load more" button before any content appears in the DOM:
+  - `{profileUrl}details/experience/`
+  - `{profileUrl}details/education/`
+  - `{profileUrl}details/skills/`
+  - (`/details/about/` returns 404 — About is extracted from the main profile page if present)
+- **Profile scraping now uses `#workspace.innerText` text parsing** — confirmed via DOM inspection that the detail pages contain no `<li>` elements and no stable class names. All content is parsed line-by-line from plain text. Separate parsers for experience (title/company/duration/bullets), education (school/degree/date anchoring), and skills (endorsement noise filtered).
+- **`get_profile` now follows `/in/me/` redirect** to capture the real profile URL before constructing detail page URLs.
+- **`update_section` (headline and about) — timeout on long text** — replaced `pressSequentially({delay})` with `locator.fill()` which sets the full value instantly. Both `<textarea>` and `[contenteditable]` elements are supported by Playwright's `fill()`.
+
 ## [0.7.2] - 2026-04-05
 
 ### Fixed
