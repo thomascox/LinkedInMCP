@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.4] - 2026-04-06
+
+### Added
+
+- **`manage_experience`** — Add or edit LinkedIn experience entries on your own profile. Supports all standard fields: title, company, employment type, location, location type, start/end dates, current role flag, and description. For `edit`, matches existing entries by case-insensitive partial title match (use `get_profile` to see current titles). Autocomplete is attempted for company names. DOM selectors confirmed via live inspection (April 2026): `input[placeholder="Ex: Retail Sales Manager"]` (title), `input[placeholder="Ex: Microsoft"]` (company), `getByLabel('Employment type')` select, `getByLabel(/month|year/i).nth(0/1)` (start/end dates), `<p>` "I am currently working in this role" adjacent checkbox, `getByLabel('Location type')` select, `textarea` (description).
+
 ## [0.7.3] - 2026-04-05
 
 ### Fixed

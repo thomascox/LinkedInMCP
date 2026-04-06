@@ -31,6 +31,7 @@ import {
   handleGetNotifications,
   handleGetUnreadCount,
 } from "./tools/notifications";
+import { handleManageExperience } from "./tools/experience";
 
 const server = new McpServer({
   name: config.server.name,
@@ -525,6 +526,47 @@ server.tool(
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       logger.error("manage_connection_requests failed:", errorMsg);
+      return { content: [{ type: "text", text: `Error: ${errorMsg}` }], isError: true };
+    }
+  }
+);
+
+// -- Phase 6: Experience Management ----------------------------------------
+
+server.tool(
+  "manage_experience",
+  "Add or edit a LinkedIn experience entry on your profile. Use action='add' to create a new position, or action='edit' with match_title to update an existing entry.\n\nFor 'edit': match_title is matched case-insensitively against existing entry titles — use get_profile to see current titles. All fields except action/match_title are optional; only provided fields are updated.\n\nemployment_type options: Full-time | Part-time | Self-employed | Freelance | Contract | Internship | Apprenticeship | Seasonal\nlocation_type options: On-site | Hybrid | Remote\nMonths are 1-12. Set is_current=true to mark as a current role (hides end date).",
+  {
+    action: z.enum(["add", "edit"]).describe("'add' to create a new entry, 'edit' to update an existing one"),
+    match_title: z
+      .string()
+      .optional()
+      .describe("Partial title text to match the existing entry (required for 'edit'). Case-insensitive."),
+    title: z.string().optional().describe("Job title (required for 'add')"),
+    company: z.string().optional().describe("Company name"),
+    employment_type: z
+      .string()
+      .optional()
+      .describe("Employment type: Full-time | Part-time | Self-employed | Freelance | Contract | Internship | Apprenticeship | Seasonal"),
+    location: z.string().optional().describe("Location (e.g. 'San Francisco, CA')"),
+    location_type: z
+      .string()
+      .optional()
+      .describe("Location type: On-site | Hybrid | Remote"),
+    start_month: z.number().int().min(1).max(12).optional().describe("Start month (1-12)"),
+    start_year: z.number().int().optional().describe("Start year (e.g. 2022)"),
+    end_month: z.number().int().min(1).max(12).optional().describe("End month (1-12) — omit for current roles"),
+    end_year: z.number().int().optional().describe("End year — omit for current roles"),
+    is_current: z.boolean().optional().describe("Set true if this is a current/active role"),
+    description: z.string().optional().describe("Role description or bullet points"),
+  },
+  async (args) => {
+    try {
+      const result = await handleManageExperience(args);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      logger.error("manage_experience failed:", errorMsg);
       return { content: [{ type: "text", text: `Error: ${errorMsg}` }], isError: true };
     }
   }

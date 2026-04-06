@@ -179,6 +179,26 @@ Read or update your own LinkedIn profile sections.
 - **`get_profile`** — Returns your headline, location, about, experience, education, and skills as compact JSON.
 - **`update_section`** — Opens edit modal, clears text, types new content with human-like delay, saves, and waits for the confirmation toast.
 
+#### `manage_experience`
+
+Add or edit a LinkedIn experience entry on your profile.
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `action` | `"add"` \| `"edit"` | Yes | `"add"` to create a new entry, `"edit"` to update an existing one |
+| `match_title` | `string` | For `edit` | Partial title text to match the existing entry (case-insensitive). Use `get_profile` to see current titles. |
+| `title` | `string` | For `add` | Job title |
+| `company` | `string` | No | Company name (autocomplete attempted) |
+| `employment_type` | `string` | No | `Full-time` \| `Part-time` \| `Self-employed` \| `Freelance` \| `Contract` \| `Internship` \| `Apprenticeship` \| `Seasonal` |
+| `location` | `string` | No | Location (e.g. `San Francisco, CA`) |
+| `location_type` | `string` | No | `On-site` \| `Hybrid` \| `Remote` |
+| `start_month` | `number` | No | Start month (1–12) |
+| `start_year` | `number` | No | Start year (e.g. `2022`) |
+| `end_month` | `number` | No | End month (1–12) — omit for current roles |
+| `end_year` | `number` | No | End year — omit for current roles |
+| `is_current` | `boolean` | No | Set `true` if this is a current/active role |
+| `description` | `string` | No | Role description or bullet points |
+
 ---
 
 ### Connections
@@ -368,6 +388,7 @@ LinkedInMCP/
 │       ├── auth.ts         # manage_auth_session
 │       ├── search.ts       # search_linkedin
 │       ├── profile.ts      # view_profile, manage_profile
+│       ├── experience.ts   # manage_experience
 │       ├── connections.ts  # send_connection_request, get_connections, manage_connection_requests
 │       ├── jobs.ts         # get_job_details, save_job, get_saved_jobs
 │       ├── messaging.ts    # get_messages, get_conversation, send_linkedin_message, get_unread_count
